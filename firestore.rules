@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ────────────────────────────────────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // isAdmin: checks the admins collection for current user's UID
+    function isAdmin() {
+      return isAuth() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isEmployee() {
+      return isAuth() &&
+        exists(/databases/$(database)/documents/employees/$(request.auth.uid));
+    }
+
+    // ─── Admins ─────────────────────────────────────────────────────────────
+    match /admins/{uid} {
+      // Admin can read own document
+      allow read: if isAuth() && request.auth.uid == uid;
+      // First admin bootstrap — only if no admin doc exists for this uid yet
+      allow create: if isAuth() && !exists(/databases/$(database)/documents/admins/$(uid));
+      allow update, delete: if isAdmin();
+    }
+
+    // ─── Employees ──────────────────────────────────────────────────────────
+    match /employees/{uid} {
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Students ───────────────────────────────────────────────────────────
+    match /students/{studentId} {
+      allow read: if isAuth();
+      allow create: if isAdmin() || isEmployee();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Employee Attendance ─────────────────────────────────────────────────
+    match /employee_attendance/{docId} {
+      allow read: if isAuth();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Student Attendance ──────────────────────────────────────────────────
+    match /student_attendance/{docId} {
+      allow read: if isAuth();
+      allow create, update: if isAdmin() || isEmployee() ||
+        (isAuth() && request.resource.data.studentId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // ─── Deleted Students (soft-delete for Undo) ──────────────────────────────
+    match /deleted_students/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ─── Deleted Employees (soft-delete for Undo) ─────────────────────────────
+    match /deleted_employees/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ─── Fees ─────────────────────────────────────────────────────────────────
+    match /fees/{feeId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── Payments ─────────────────────────────────────────────────────────────
+    match /payments/{paymentId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Salaries ─────────────────────────────────────────────────────────────
+    match /salaries/{salaryId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── Fee Rules ────────────────────────────────────────────────────────────
+    match /fee_rules/{ruleId} {
+      allow read: if isAuth();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Settings ─────────────────────────────────────────────────────────────
+    match /settings/{settingId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── Fee Ledger ───────────────────────────────────────────────────────────
+    match /fee_ledger/{docId} {
+      allow read: if isAdmin() ||
+        (isAuth() && resource.data.studentId == request.auth.uid);
+      allow create, update: if isAdmin() ||
+        (isAuth() && request.resource.data.studentId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // ─── Payment Requests ─────────────────────────────────────────────────────
+    match /payment_requests/{docId} {
+      allow read: if isAdmin() ||
+        (isAuth() && resource.data.studentId == request.auth.uid);
+      allow create: if isAuth() &&
+        request.resource.data.studentId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Timetables ───────────────────────────────────────────────────────────
+    match /timetables/{className} {
+      allow read:  if isAuth();
+      allow write: if isAdmin() || isEmployee();
+    }
+
+    // ─── Fine Waivers ─────────────────────────────────────────────────────────
+    match /fine_waivers/{docId} {
+      allow read: if isAdmin() ||
+        (isAuth() && resource.data.studentId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─── Leave Requests (Employee) ────────────────────────────────────────────
+    // Employees submit; admin approves/rejects
+    match /leave_requests/{docId} {
+      allow read: if isAdmin() ||
+        (isAuth() && resource.data.employeeId == request.auth.uid);
+      allow create: if isEmployee() &&
+        request.resource.data.employeeId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Student Leave Notifications ─────────────────────────────────────────
+    // Students submit; admin and employees (class teachers) can read
+    match /student_leaves/{docId} {
+      allow read: if isAdmin() || isEmployee() ||
+        (isAuth() && resource.data.studentId == request.auth.uid);
+      allow create: if isAuth() &&
+        request.resource.data.studentId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+  }
+}
