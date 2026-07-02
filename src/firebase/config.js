@@ -4,6 +4,7 @@ import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 import { getAnalytics, isSupported } from 'firebase/analytics'
 
+// ── Firebase config — env vars first, hardcoded fallbacks for Vercel ──────────
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY            || 'AIzaSyAAUFv1VjQglrKtNIErIEo6udoJ9TYWzbo',
   authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN        || 'anand-school-bca42.firebaseapp.com',
@@ -20,6 +21,7 @@ export const auth    = getAuth(app)
 export const db      = getFirestore(app)
 export const storage = getStorage(app)
 
-export const analytics = isSupported().then((yes) => yes ? getAnalytics(app) : null)
+// Analytics optional — won't crash if unsupported
+export const analytics = isSupported().then((yes) => yes ? getAnalytics(app) : null).catch(() => null)
 
 export default app

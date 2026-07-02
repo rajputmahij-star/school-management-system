@@ -8,10 +8,12 @@ dist/
 dist-ssr/
 build/
 
-# Environment variables (NEVER commit these)
-.env
+# Environment variables — .env is kept for Vercel fallback
+# NEVER commit .env.local or .env.production with real secrets
 .env.local
-.env.production
+.env.production.local
+.env.development.local
+.env.test.local
 
 # Logs
 logs
