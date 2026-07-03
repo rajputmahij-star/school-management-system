@@ -1,18 +1,21 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle } from 'react-icons/hi'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle, HiUpload, HiTemplate, HiX } from 'react-icons/hi'
 import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument } from '../../firebase/firestore'
 import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
 import { exportStudentsToExcel } from '../../utils/excelExport'
+import { parseExcelFile, mapRowsToStudents, downloadImportTemplate } from '../../utils/excelImport'
 import { generateStudentReport } from '../../utils/pdfExport'
+import { db } from '../../firebase/config'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Pagination from '../../components/ui/Pagination'
 import ImageUpload from '../../components/ui/ImageUpload'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import toast from 'react-hot-toast'
-import { Timestamp, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { Timestamp, doc, updateDoc, serverTimestamp as serverTs } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 
 import { SCHOOL_CLASSES, NIOS_SUBGROUPS, isNiosGroup, DEFAULT_FORM_OPTIONS } from '../../utils/helpers'
@@ -95,6 +98,12 @@ export default function Students() {
   const [pwModal, setPwModal]     = useState({ open: false, student: null })
   const [pwForm, setPwForm]       = useState({ current: '', newPw: '', confirm: '' })
   const [deleteDialog, setDeleteDialog] = useState({ open: false, uid: null, name: '' })
+  const [importModal, setImportModal]   = useState(false)
+  const [importRows,  setImportRows]    = useState([])   // parsed preview rows
+  const [importErrors, setImportErrors] = useState([])
+  const [importing,   setImporting]     = useState(false)
+  const [importDone,  setImportDone]    = useState(0)
+  const fileInputRef = useRef(null)
 
   // Stable handlers — each is memoised so TF/SF never remounts
   const h = useCallback((field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value })), [])
@@ -262,7 +271,7 @@ export default function Students() {
     try {
       await updateDoc(doc(db, 'students', s.uid || s.id), {
         leaveDate: Timestamp.fromDate(new Date()),
-        updatedAt: serverTimestamp(),
+        updatedAt: serverTs(),
       })
       toast.success(`${s.studentName} marked as Left`)
       load()
@@ -273,7 +282,7 @@ export default function Students() {
     try {
       await updateDoc(doc(db, 'students', s.uid || s.id), {
         leaveDate: null,
-        updatedAt: serverTimestamp(),
+        updatedAt: serverTs(),
       })
       toast.success(`${s.studentName} marked as Active`)
       load()
@@ -326,6 +335,68 @@ export default function Students() {
     finally { setSaving(false) }
   }
 
+  // ─── Import handling ──────────────────────────────────────────────────────
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    try {
+      const rows = await parseExcelFile(file)
+      const { students: mapped, errors } = mapRowsToStudents(rows)
+      setImportRows(mapped)
+      setImportErrors(errors)
+      setImportDone(0)
+      if (errors.length === 0) {
+        toast.success(`${mapped.length} students ready to import`)
+      } else {
+        toast.error(`Found ${errors.length} error(s) — check and fix`)
+      }
+    } catch (err) {
+      toast.error(err.message)
+      setImportRows([])
+      setImportErrors([err.message])
+    }
+    // Reset file input so the same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleImport = async () => {
+    if (importRows.length === 0) { toast.error('No students to import'); return }
+    if (importErrors.length > 0) {
+      toast.error('Fix errors before importing'); return
+    }
+    setImporting(true)
+    let success = 0
+    try {
+      for (const student of importRows) {
+        // Generate a unique student ID if not provided
+        if (!student.studentId) student.studentId = generateStudentId()
+        
+        // Use studentId as document ID to avoid duplicates
+        const docId = student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')
+        
+        await setDoc(doc(db, 'students', docId), {
+          ...student,
+          status: 'active',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+        
+        success++
+        setImportDone(success)
+      }
+      toast.success(`${success} students imported successfully!`)
+      setImportModal(false)
+      setImportRows([])
+      setImportErrors([])
+      load() // Refresh the list
+    } catch (err) {
+      toast.error(`Import failed after ${success} students: ${err.message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
 
@@ -338,6 +409,7 @@ export default function Students() {
         <div className="flex flex-wrap gap-2">
           <button onClick={() => generateStudentReport(students)} className="btn-secondary text-sm"><HiDownload className="w-4 h-4" /> PDF</button>
           <button onClick={() => exportStudentsToExcel(students)} className="btn-secondary text-sm"><HiDownload className="w-4 h-4" /> Excel</button>
+          <button onClick={() => { setImportRows([]); setImportErrors([]); setImportDone(0); setImportModal(true) }} className="btn-secondary text-sm"><HiUpload className="w-4 h-4" /> Import Excel</button>
           <button onClick={openAdd} className="btn-primary text-sm"><HiPlus className="w-4 h-4" /> Add Student</button>
         </div>
       </div>
@@ -914,6 +986,123 @@ export default function Students() {
         title="Delete Student"
         message={`Delete "${deleteDialog.name}"? This cannot be undone.`}
       />
+
+      {/* ── Excel Import Modal ── */}
+      <Modal isOpen={importModal} onClose={() => !importing && setImportModal(false)}
+        title="Import Students from Excel" size="lg">
+        <div className="space-y-5">
+          <p className="text-sm text-gray-500">
+            Upload an Excel (.xlsx) file to bulk-import students into Firebase. 
+            Each row becomes one student record.
+          </p>
+
+          {/* Step 1: Download template */}
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Step 1 — Download Template</p>
+              <p className="text-xs text-blue-500 mt-0.5">Fill in the template with your student data, then upload it below.</p>
+            </div>
+            <button
+              onClick={downloadImportTemplate}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium whitespace-nowrap"
+            >
+              <HiTemplate className="w-4 h-4" /> Download Template
+            </button>
+          </div>
+
+          {/* Step 2: Upload file */}
+          <div>
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Step 2 — Upload Filled Excel File</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileSelect}
+              className="hidden"
+              id="excel-import-input"
+            />
+            <label
+              htmlFor="excel-import-input"
+              className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/10 transition-colors"
+            >
+              <HiUpload className="w-8 h-8 text-gray-400 mb-2" />
+              <p className="text-sm text-gray-500">Click to choose .xlsx file</p>
+              <p className="text-xs text-gray-400 mt-0.5">Supports .xlsx and .xls</p>
+            </label>
+          </div>
+
+          {/* Errors */}
+          {importErrors.length > 0 && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl space-y-1 max-h-36 overflow-y-auto">
+              <p className="text-xs font-semibold text-red-600 flex items-center gap-1"><HiExclamation className="w-4 h-4" /> {importErrors.length} Error(s)</p>
+              {importErrors.map((e, i) => (
+                <p key={i} className="text-xs text-red-500">{e}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Preview table */}
+          {importRows.length > 0 && importErrors.length === 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                  <HiCheckCircle className="w-4 h-4 text-green-500" />
+                  {importRows.length} students ready to import
+                </p>
+                {importing && (
+                  <p className="text-xs text-blue-500">{importDone} / {importRows.length} saved…</p>
+                )}
+              </div>
+              <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl max-h-52">
+                <table className="w-full text-xs min-w-[500px]">
+                  <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
+                    <tr>
+                      {['#', 'Student ID', 'Name', 'Class', 'GR Number', 'Father Name', 'DOB'].map((h) => (
+                        <th key={h} className="p-2 text-left font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {importRows.map((s, i) => (
+                      <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <td className="p-2 text-gray-400">{i + 1}</td>
+                        <td className="p-2 font-mono text-gray-700 dark:text-gray-300">{s.studentId || '—'}</td>
+                        <td className="p-2 font-medium text-gray-900 dark:text-white">{s.studentName}</td>
+                        <td className="p-2 text-gray-500">{s.className || '—'}</td>
+                        <td className="p-2 text-gray-500">{s.grNumber || '—'}</td>
+                        <td className="p-2 text-gray-500">{s.fatherName || '—'}</td>
+                        <td className="p-2 text-gray-500">{s.dob ? formatDate(s.dob) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Note: Students are saved using Student ID as the document key. Re-importing the same ID will update the record.
+              </p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={() => setImportModal(false)}
+              disabled={importing}
+              className="btn-secondary flex-1 justify-center"
+            >Cancel</button>
+            <button
+              onClick={handleImport}
+              disabled={importing || importRows.length === 0 || importErrors.length > 0}
+              className="btn-primary flex-1 justify-center"
+            >
+              {importing
+                ? <><LoadingSpinner size="sm" /> Importing {importDone}/{importRows.length}…</>
+                : <><HiUpload className="w-4 h-4" /> Import {importRows.length > 0 ? `${importRows.length} Students` : ''}</>
+              }
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
