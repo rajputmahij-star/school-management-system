@@ -7,12 +7,12 @@ export default function AdminTimetable() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="no-print">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Timetable</h1>
         <p className="text-sm text-gray-500 mt-0.5">View and edit class timetables</p>
       </div>
 
-      <div className="card p-4 flex flex-wrap items-end gap-4">
+      <div className="card p-4 flex flex-wrap items-end gap-4 no-print">
         <div>
           <label className="label">Select Class</label>
           <select

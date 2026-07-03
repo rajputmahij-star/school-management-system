@@ -31,7 +31,7 @@ export default function EducatorTimetable() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="no-print">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Educator Timetable</h1>
         <p className="text-sm text-gray-500 mt-0.5">
           {hasClassRestriction
@@ -42,14 +42,14 @@ export default function EducatorTimetable() {
 
       {/* Class selector — restricted for assigned educators */}
       {hasClassRestriction ? (
-        <div className="card p-4">
+        <div className="card p-4 no-print">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Showing timetable for your assigned class:
             <span className="ml-2 font-semibold text-gray-900 dark:text-white">{assignedClass}</span>
           </p>
         </div>
       ) : (
-        <div className="card p-4 flex flex-wrap items-end gap-4">
+        <div className="card p-4 flex flex-wrap items-end gap-4 no-print">
           <div>
             <label className="label">Select Class</label>
             <select
