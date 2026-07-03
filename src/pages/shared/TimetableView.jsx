@@ -262,6 +262,22 @@ export default function TimetableView({ className, canEdit = false }) {
     } finally { setLoading(false) }
   }
 
+  // Get month and year for display
+  const getMonthYear = () => {
+    const now = new Date()
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                        'July', 'August', 'September', 'October', 'November', 'December']
+    return `${monthNames[now.getMonth()]} ${now.getFullYear()}`
+  }
+
+  // Get last updated date if available
+  const getLastUpdated = () => {
+    // This would come from timetable data if it has updatedAt field
+    // For now, show current date
+    const now = new Date()
+    return now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+
   const startEdit  = () => { setEditMode(true); setDirty(false) }
   const cancelEdit = () => {
     setDraft(JSON.parse(JSON.stringify(timetable)))
@@ -370,6 +386,7 @@ export default function TimetableView({ className, canEdit = false }) {
                 <p className="text-white font-bold text-base sm:text-lg tracking-wide">ANAND SPECIAL SCHOOL</p>
                 <p className="text-blue-200 text-xs font-medium mt-0.5">(Mngd. By Anand Rehabilitation Trust)</p>
                 <p className="text-blue-300 text-xs font-medium mt-0.5">TIME TABLE — {className.toUpperCase()}</p>
+                <p className="text-blue-200 text-[10px] font-medium mt-1">{getMonthYear()} • Last Updated: {getLastUpdated()}</p>
               </td>
             </tr>
             {/* Day headers */}
@@ -494,11 +511,56 @@ export default function TimetableView({ className, canEdit = false }) {
             box-shadow: none !important;
           }
           
-          /* Preserve table structure */
+          /* Preserve table structure and fit to one page */
           table {
-            page-break-inside: auto;
+            page-break-inside: avoid !important;
             border-collapse: collapse !important;
             width: 100% !important;
+            font-size: 7px !important;
+          }
+          
+          /* Reduce header size */
+          thead td {
+            padding: 4px !important;
+          }
+          
+          thead td p {
+            margin: 1px 0 !important;
+            font-size: 10px !important;
+          }
+          
+          thead td p:first-child {
+            font-size: 12px !important;
+          }
+          
+          /* Reduce cell padding */
+          td, th {
+            padding: 3px !important;
+            font-size: 7px !important;
+            line-height: 1.2 !important;
+          }
+          
+          /* Reduce cell content size */
+          td > div {
+            padding: 2px 3px !important;
+            min-height: 32px !important;
+            font-size: 7px !important;
+            line-height: 1.3 !important;
+          }
+          
+          /* Reduce time column */
+          th:first-child,
+          td:first-child {
+            font-size: 7px !important;
+          }
+          
+          /* Reduce footer */
+          tfoot td {
+            padding: 3px !important;
+          }
+          
+          tfoot span {
+            font-size: 8px !important;
           }
           
           tr {
@@ -506,13 +568,9 @@ export default function TimetableView({ className, canEdit = false }) {
             page-break-after: auto;
           }
           
-          td, th {
-            page-break-inside: avoid;
-          }
-          
-          /* Print margins */
+          /* Print margins - minimal to fit on one page */
           @page {
-            margin: 0.5cm;
+            margin: 0.3cm;
             size: landscape;
           }
           

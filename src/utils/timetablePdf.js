@@ -36,19 +36,29 @@ export const downloadTimetablePDF = (className, timetable) => {
   const W = doc.internal.pageSize.width
   const H = doc.internal.pageSize.height
 
+  // Get current month and year
+  const now = new Date()
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December']
+  const monthYear = `${monthNames[now.getMonth()]} ${now.getFullYear()}`
+  const lastUpdated = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+
   // Header with gradient-like blue
   doc.setFillColor(22, 55, 122) // #16377A
-  doc.rect(0, 0, W, 18, 'F')
+  doc.rect(0, 0, W, 20, 'F')
   doc.setTextColor(255, 255, 255)
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
-  doc.text('ANAND SPECIAL SCHOOL', W / 2, 7, { align: 'center' })
+  doc.text('ANAND SPECIAL SCHOOL', W / 2, 6, { align: 'center' })
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
-  doc.text('(Mngd. By Anand Rehabilitation Trust)', W / 2, 11, { align: 'center' })
+  doc.text('(Mngd. By Anand Rehabilitation Trust)', W / 2, 10, { align: 'center' })
   doc.setFontSize(9)
   doc.setFont('helvetica', 'bold')
-  doc.text(`TIME TABLE — ${className.toUpperCase()}`, W / 2, 15, { align: 'center' })
+  doc.text(`TIME TABLE — ${className.toUpperCase()}`, W / 2, 14, { align: 'center' })
+  doc.setFontSize(7)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`${monthYear} • Last Updated: ${lastUpdated}`, W / 2, 18, { align: 'center' })
   doc.setTextColor(0, 0, 0)
 
   const head = [['TIME', ...DAYS]]
@@ -77,12 +87,12 @@ export const downloadTimetablePDF = (className, timetable) => {
   }
 
   autoTable(doc, {
-    startY: 22,
+    startY: 24,
     head,
     body,
     styles: { 
-      fontSize: 7, 
-      cellPadding: 2, 
+      fontSize: 6.5,
+      cellPadding: 1.5, 
       valign: 'middle', 
       overflow: 'linebreak',
       lineColor: [200, 200, 200],
@@ -93,14 +103,15 @@ export const downloadTimetablePDF = (className, timetable) => {
       textColor: 255, 
       fontStyle: 'bold', 
       halign: 'center',
-      fontSize: 8
+      fontSize: 7
     },
     columnStyles: { 
       0: { 
         fillColor: [240, 240, 240], 
         fontStyle: 'bold', 
-        cellWidth: 22,
-        halign: 'center'
+        cellWidth: 20,
+        halign: 'center',
+        fontSize: 6
       } 
     },
     didParseCell: (data) => {
