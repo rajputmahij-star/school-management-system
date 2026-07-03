@@ -8,15 +8,13 @@ import { exportStudentsToExcel } from '../../utils/excelExport'
 import { parseExcelFile, mapRowsToStudents, downloadImportTemplate } from '../../utils/excelImport'
 import { generateStudentReport } from '../../utils/pdfExport'
 import { db } from '../../firebase/config'
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { Timestamp, doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Pagination from '../../components/ui/Pagination'
 import ImageUpload from '../../components/ui/ImageUpload'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import toast from 'react-hot-toast'
-import { Timestamp, doc, updateDoc, serverTimestamp as serverTs } from 'firebase/firestore'
-import { db } from '../../firebase/config'
 
 import { SCHOOL_CLASSES, NIOS_SUBGROUPS, isNiosGroup, DEFAULT_FORM_OPTIONS } from '../../utils/helpers'
 
@@ -271,7 +269,7 @@ export default function Students() {
     try {
       await updateDoc(doc(db, 'students', s.uid || s.id), {
         leaveDate: Timestamp.fromDate(new Date()),
-        updatedAt: serverTs(),
+        updatedAt: serverTimestamp(),
       })
       toast.success(`${s.studentName} marked as Left`)
       load()
@@ -282,7 +280,7 @@ export default function Students() {
     try {
       await updateDoc(doc(db, 'students', s.uid || s.id), {
         leaveDate: null,
-        updatedAt: serverTs(),
+        updatedAt: serverTimestamp(),
       })
       toast.success(`${s.studentName} marked as Active`)
       load()
@@ -369,26 +367,31 @@ export default function Students() {
     let success = 0
     try {
       for (const student of importRows) {
-        // Generate a unique student ID if not provided
-        if (!student.studentId) student.studentId = generateStudentId()
+        // Use GR number as Student ID
+        if (!student.studentId) {
+          student.studentId = student.grNumber
+            ? `GR${String(student.grNumber).replace(/^0+/, '').padStart(3, '0')}`
+            : generateStudentId()
+        }
         
         // Set defaults for required fields if missing
-        if (!student.className) student.className = 'Not Assigned'
+        if (!student.className) student.className = 'Primary'
         if (!student.caseHistoryDate && student.dob) {
-          // Default admission date to 2020-04-01 if not provided
           student.caseHistoryDate = Timestamp.fromDate(new Date('2020-04-01'))
         }
         if (!student.gender) student.gender = ''
         if (!student.nationality) student.nationality = 'Indian'
         
-        // Generate email if not provided (using studentId)
+        // Generate email if not provided
         if (!student.email) {
           const cleanId = student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')
           student.email = `${cleanId}@school.edu`
         }
         
-        // Use studentId as document ID to avoid duplicates
-        const docId = student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')
+        // Use GR number as document ID (clean numeric part only)
+        const docId = student.grNumber
+          ? `gr${String(student.grNumber).replace(/\s+/g, '').replace(/^0+/, '')}`
+          : student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')
         
         await setDoc(doc(db, 'students', docId), {
           ...student,
@@ -404,7 +407,7 @@ export default function Students() {
       setImportModal(false)
       setImportRows([])
       setImportErrors([])
-      load() // Refresh the list
+      load()
     } catch (err) {
       toast.error(`Import failed after ${success} students: ${err.message}`)
     } finally {
