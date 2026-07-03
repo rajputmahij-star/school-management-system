@@ -83,17 +83,42 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
     return result
   }, [selectedKey, allRows])
 
-  // Yearly: starting from selectedKey, pick next 11 unpaid months (skipping paid ones)
+  // Yearly: starting from selectedKey, pick next 11 unpaid months for the academic year
+  // Academic year runs from June (selected year) to May (next year)
   const yearlyResult = useMemo(() => {
     if (!selectedKey) return []
-    const startIdx = allRows.findIndex((r) => r.periodKey === selectedKey)
-    if (startIdx === -1) return []
-    const result = []
-    for (let i = startIdx; i < allRows.length && result.length < 11; i++) {
-      const r = allRows[i]
-      if (!isPaidStatus(r.status)) result.push(r)
+    
+    // Extract year and month from selectedKey
+    const [yearStr, monthStr] = selectedKey.split('-')
+    const selectedYearNum = parseInt(yearStr)
+    const selectedMonthNum = parseInt(monthStr)
+    
+    // Determine academic year start
+    // If selected month is June-December, academic year is June of selected year
+    // If selected month is January-May, academic year started in previous June
+    const academicYearStart = selectedMonthNum >= 6 ? selectedYearNum : selectedYearNum - 1
+    
+    // Build 12-month academic year cycle: June to May
+    const academicYearMonths = []
+    for (let i = 0; i < 12; i++) {
+      const month = 6 + i  // Start from June (month 6)
+      const year = month > 12 ? academicYearStart + 1 : academicYearStart
+      const adjustedMonth = month > 12 ? month - 12 : month
+      const key = `${year}-${String(adjustedMonth).padStart(2, '0')}`
+      academicYearMonths.push(key)
     }
-    return result
+    
+    // Find unpaid months in this academic year cycle
+    const result = []
+    for (const key of academicYearMonths) {
+      const row = allRows.find(r => r.periodKey === key)
+      if (row && !isPaidStatus(row.status)) {
+        result.push(row)
+      }
+    }
+    
+    // Return 11 months maximum (1 month free in academic year)
+    return result.slice(0, 11)
   }, [selectedKey, allRows])
 
   // All unpaid rows for quarterly/yearly starting month dropdown
@@ -310,7 +335,7 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
               </div>
               <div>
                 <label className="label">Starting Month</label>
-                <p className="text-xs text-gray-400 mb-2">System picks the next 11 unpaid months (1 month free), skipping already paid ones.</p>
+                <p className="text-xs text-gray-400 mb-2">Select any month - system will cover the full academic year (June to May) with 11 months payment (1 month free).</p>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                   {MONTH_NAMES.map((name, idx) => {
                     const key = `${selectedYear}-${String(idx + 1).padStart(2, '0')}`
@@ -342,7 +367,7 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
               {yearlyResult.length > 0 && (
                 <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-xl p-3">
                   <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 mb-2">
-                    Will pay {yearlyResult.length} month(s) — 1 month free:
+                    Academic Year Payment — {yearlyResult.length} month(s) ({12 - yearlyResult.length} month{12 - yearlyResult.length !== 1 ? 's' : ''} free):
                   </p>
                   <div className="space-y-1 max-h-32 overflow-y-auto">
                     {yearlyResult.map((r) => (
@@ -507,7 +532,8 @@ export default function StudentFees() {
       cursor = new Date(y, m + 1, 1)
     }
 
-    return mergeLedger(periods, ledgerMap, lateFeeBase, lateFeePerDay).map((r) => ({
+    const caseHistoryDate = getFeeStartDate(userData) // Student's admission/enrollment date
+    return mergeLedger(periods, ledgerMap, lateFeeBase, lateFeePerDay, caseHistoryDate).map((r) => ({
       ...r,
       status: (r.status === 'Paid' && r.dueDate && new Date(r.dueDate) > new Date())
         ? 'Advance Paid' : r.status,
@@ -571,7 +597,7 @@ export default function StudentFees() {
           <HiExclamation className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-              {unpaidCount} outstanding payment{unpaidCount > 1 ? 's' : ''} — {formatCurrency(totalDue)} due
+              {unpaidCount} pending payment{unpaidCount > 1 ? 's' : ''} — {formatCurrency(totalDue)} due
             </p>
             <p className="text-xs text-red-500 dark:text-red-500 mt-0.5">
               Please clear pending dues to avoid late fees.
