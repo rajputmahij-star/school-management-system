@@ -56,6 +56,13 @@
         { "fieldPath": "month", "order": "ASCENDING" },
         { "fieldPath": "year", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "students",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

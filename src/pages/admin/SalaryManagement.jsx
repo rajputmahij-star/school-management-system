@@ -46,10 +46,20 @@ export default function SalaryManagement() {
       const activeEmps = emps.filter((e) => !e.leaveDate)
       setEmployees(activeEmps)
 
-      const existing = await getCollection('salaries', [
-        where('month', '==', selectedMonth),
-        where('year',  '==', selectedYear),
-      ])
+      // Try with compound where first; fall back to full fetch + client-side filter
+      // if the composite index (month + year) hasn't been created yet
+      let existing = []
+      try {
+        existing = await getCollection('salaries', [
+          where('month', '==', selectedMonth),
+          where('year',  '==', selectedYear),
+        ])
+      } catch (err) {
+        console.warn('Salary index missing, fetching all and filtering client-side:', err.message)
+        const all = await getCollection('salaries', [])
+        existing = all.filter((s) => s.month === selectedMonth && s.year === selectedYear)
+      }
+
       const map = {}
       existing.forEach((s) => { map[s.employeeId] = s })
       setSalaryMap(map)
