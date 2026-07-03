@@ -458,8 +458,8 @@ export default function FeeManagement() {
     requests.forEach((req) => {
       if (processed.has(req.id)) return
 
-      // For quarterly/half-yearly/annual payments with same reference ID, group them
-      if (req.paymentType && ['Quarterly', 'Half-Yearly', 'Annual'].includes(req.paymentType) && req.referenceId) {
+      // For quarterly/half-yearly/annual/yearly payments with same reference ID, group them
+      if (req.paymentType && ['Quarterly', 'Half-Yearly', 'Annual', 'Yearly'].includes(req.paymentType) && req.referenceId) {
         // Find all requests with same student, reference ID, and payment type
         const relatedRequests = requests.filter((r) => 
           r.studentId === req.studentId &&
@@ -477,8 +477,9 @@ export default function FeeManagement() {
           
           // For annual/yearly payment: show 12 months coverage but payment is for 11 months (1 month free)
           const paidMonths = relatedRequests.length
-          const coverageMonths = req.paymentType === 'Annual' ? 12 : paidMonths
-          const freeMonths = req.paymentType === 'Annual' ? 1 : 0
+          const isYearly = req.paymentType === 'Annual' || req.paymentType === 'Yearly'
+          const coverageMonths = isYearly ? 12 : paidMonths
+          const freeMonths = isYearly ? 1 : 0
 
           grouped.push({
             ...req,
