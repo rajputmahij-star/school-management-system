@@ -62,7 +62,7 @@ export const generateRequestReceipt = async (req, student) => {
   const logos = await loadPdfLogos()
 
   // Use the receipt number from the request if available
-  const receiptNo = req.receiptNumber || req.id?.slice(0, 8).toUpperCase() || 'N/A'
+  const receiptNo = req.receiptNumber || `LEGACY-${req.id?.slice(0, 8).toUpperCase() || 'N/A'}`
 
   let y = await drawLetterhead(
     doc, logos,
@@ -168,7 +168,7 @@ export const generateSalaryReceipt = async (salary, employee) => {
   const logos = await loadPdfLogos()
 
   // Use the receipt number from the salary if available
-  const receiptNo = salary.receiptNumber || salary.id?.slice(0, 8).toUpperCase() || 'N/A'
+  const receiptNo = salary.receiptNumber || `LEGACY-${salary.id?.slice(0, 8).toUpperCase() || 'N/A'}`
 
   let y = await drawLetterhead(
     doc, logos,
