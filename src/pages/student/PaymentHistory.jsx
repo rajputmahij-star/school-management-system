@@ -59,17 +59,24 @@ export default function PaymentHistory() {
           const totalLateFee = relatedRequests.reduce((sum, r) => sum + (r.lateFee || 0), 0)
           const totalAmount = relatedRequests.reduce((sum, r) => sum + (r.totalAmount || 0), 0)
           const periods = relatedRequests.map(r => r.billingPeriod).join(', ')
+          
+          // For yearly payment: show 12 months coverage but payment is for 11 months (1 month free)
+          const paidMonths = relatedRequests.length
+          const coverageMonths = req.paymentType === 'Yearly' ? 12 : paidMonths
+          const freeMonths = req.paymentType === 'Yearly' ? 1 : 0
 
           grouped.push({
             ...req,
             id: req.id,
-            billingPeriod: `${relatedRequests.length} months`,
+            billingPeriod: `${coverageMonths} months`,
             periodDetails: periods, // Store full period list
             baseAmount: totalBase,
             lateFee: totalLateFee,
             totalAmount: totalAmount,
             isGrouped: true,
-            monthCount: relatedRequests.length
+            monthCount: relatedRequests.length,
+            paidMonths: paidMonths,
+            freeMonths: freeMonths
           })
 
           // Mark all related requests as processed
@@ -146,6 +153,7 @@ export default function PaymentHistory() {
                       {r.isGrouped && r.periodDetails && (
                         <p className="text-xs text-blue-500 mt-0.5" title={r.periodDetails}>
                           {r.paymentType} payment
+                          {r.freeMonths > 0 && ` (paid for ${r.paidMonths} months)`}
                         </p>
                       )}
                       {!r.isGrouped && r.periodKey && <p className="text-xs text-gray-400 font-mono">{r.periodKey}</p>}
