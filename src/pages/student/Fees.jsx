@@ -401,6 +401,68 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
             </div>
           )}
 
+          {/* UPI Payment Section */}
+          {rowsToSubmit.length > 0 && (
+            <div className="border-2 border-blue-200 dark:border-blue-800 rounded-xl p-4 bg-blue-50 dark:bg-blue-900/20">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-semibold text-blue-900 dark:text-blue-100 text-sm">Pay via UPI</p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">Quick & Secure Payment</p>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-blue-100 dark:border-blue-800">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">UPI ID</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-mono text-sm font-semibold text-gray-900 dark:text-white break-all">
+                      240140107066.riddhisingapuri@okaxis
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText('240140107066.riddhisingapuri@okaxis')
+                        toast.success('UPI ID copied!')
+                      }}
+                      className="flex-shrink-0 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      title="Copy UPI ID"
+                    >
+                      <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <a
+                  href={`upi://pay?pa=240140107066.riddhisingapuri@okaxis&pn=Anand%20Special%20School&am=${totalPayable}&cu=INR&tn=Fee%20Payment%20for%20${rowsToSubmit.length}%20month(s)`}
+                  className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 18c-3.87-.94-7-5.17-7-9V8.69l7-3.5 7 3.5V11c0 3.83-3.13 8.06-7 9z"/>
+                  </svg>
+                  Pay ₹{totalPayable.toLocaleString('en-IN')} via UPI
+                </a>
+
+                <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+                  Click to open your UPI app (PhonePe, GPay, Paytm, etc.)
+                </p>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+                <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mb-1">📝 After Payment:</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Enter the transaction/reference ID below and submit for verification
+                </p>
+              </div>
+            </div>
+          )}
+
           {paymentWebsiteUrl && (
             <a href={paymentWebsiteUrl} target="_blank" rel="noreferrer"
               className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-white text-sm font-medium"
