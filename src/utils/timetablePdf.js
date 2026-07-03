@@ -22,8 +22,10 @@ export const downloadTimetablePDF = (className, timetable) => {
   const body = TIME_SLOTS.map((slot) => {
     const row = [slot.label]
     DAYS.forEach((day) => {
-      const cell = timetable?.[day]?.[slot.id] || ''
-      row.push(cell)
+      const cell = timetable?.[day]?.[slot.id]
+      // cell may be a rich object { text, bold, ... } or a plain string (legacy)
+      const text = typeof cell === 'string' ? cell : (cell?.text || '')
+      row.push(text)
     })
     return row
   })

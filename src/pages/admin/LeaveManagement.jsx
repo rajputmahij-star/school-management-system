@@ -62,6 +62,63 @@ const RejectDialog = ({ request, onClose, onDone }) => {
   )
 }
 
+// ─── Expandable dates cell ────────────────────────────────────────────────────
+const DatesCell = ({ req }) => {
+  const [open, setOpen] = useState(false)
+
+  if (!req.dates?.length) {
+    return (
+      <div>
+        <p className="text-sm font-medium text-gray-900 dark:text-white">{req.fromDate}</p>
+        <p className="text-xs text-gray-500">to {req.toDate}</p>
+      </div>
+    )
+  }
+
+  const total  = req.dates.length
+  const shown  = req.dates.slice(0, 2)
+  const hidden = total - 2
+
+  return (
+    <>
+      <div>
+        <p className="text-sm font-medium text-gray-900 dark:text-white">{total} day{total > 1 ? 's' : ''}</p>
+        <p className="text-xs text-gray-500">
+          {shown.map((d) => format(parseISO(d), 'dd MMM')).join(', ')}
+          {hidden > 0 && (
+            <button onClick={() => setOpen(true)}
+              className="ml-1 text-primary-600 dark:text-primary-400 hover:underline font-medium">
+              +{hidden} more
+            </button>
+          )}
+        </p>
+      </div>
+
+      {/* All dates modal */}
+      {open && (
+        <Modal isOpen onClose={() => setOpen(false)} title={`All Leave Dates — ${req.employeeName}`} size="sm">
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500 mb-3">
+              {total} day{total > 1 ? 's' : ''} of leave requested
+            </p>
+            <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+              {req.dates.map((d, i) => (
+                <div key={d} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2">
+                  <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-xs font-bold text-primary-600">{i + 1}</span>
+                  <span className="text-sm text-gray-900 dark:text-white">{format(parseISO(d), 'dd MMM yyyy')}</span>
+                </div>
+              ))}
+            </div>
+            <div className="pt-2">
+              <button onClick={() => setOpen(false)} className="btn-secondary w-full justify-center text-sm">Close</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function AdminLeaveManagement() {
   const { userData: admin } = useAuth()
@@ -151,7 +208,7 @@ export default function AdminLeaveManagement() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Leave Management</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manage educator leave requests and student leave notifications</p>
+          <p className="text-sm text-gray-500 mt-0.5">Manage employee leave requests and student leave notifications</p>
         </div>
         <button onClick={loadAll} className="btn-secondary text-sm"><HiRefresh className="w-4 h-4" /> Refresh</button>
       </div>
@@ -160,7 +217,7 @@ export default function AdminLeaveManagement() {
       <div className="flex gap-2">
         <button onClick={() => setTab('employee')}
           className={`relative px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === 'employee' ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
-          Educator Leave Requests
+          Employee Leave Requests
           {pendingCount > 0 && (
             <span className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold">{pendingCount}</span>
           )}
@@ -199,17 +256,7 @@ export default function AdminLeaveManagement() {
                       </td>
                       <td className="table-cell hidden sm:table-cell"><span className="badge-info">{req.designation}</span></td>
                       <td className="table-cell">
-                        {req.dates?.length > 0 ? (
-                          <div>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">{req.totalDays} day{req.totalDays > 1 ? 's' : ''}</p>
-                            <p className="text-xs text-gray-500">{req.dates.slice(0,2).map(d => format(parseISO(d),'dd MMM')).join(', ')}{req.dates.length > 2 ? ` +${req.dates.length - 2} more` : ''}</p>
-                          </div>
-                        ) : (
-                          <div>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">{req.fromDate}</p>
-                            <p className="text-xs text-gray-500">to {req.toDate}</p>
-                          </div>
-                        )}
+                        <DatesCell req={req} />
                       </td>
                       <td className="table-cell hidden md:table-cell text-sm text-gray-600 dark:text-gray-400 max-w-xs truncate">{req.reason}</td>
                       <td className="table-cell">
