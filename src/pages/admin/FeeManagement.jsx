@@ -446,6 +446,58 @@ export default function FeeManagement() {
     [requests]
   )
 
+  // Group requests by reference ID and payment type (for quarterly/half-yearly payments)
+  const groupedRequests = useMemo(() => {
+    const grouped = []
+    const processed = new Set()
+
+    requests.forEach((req) => {
+      if (processed.has(req.id)) return
+
+      // For quarterly/half-yearly/annual payments with same reference ID, group them
+      if (req.paymentType && ['Quarterly', 'Half-Yearly', 'Annual'].includes(req.paymentType) && req.referenceId) {
+        // Find all requests with same student, reference ID, and payment type
+        const relatedRequests = requests.filter((r) => 
+          r.studentId === req.studentId &&
+          r.referenceId === req.referenceId &&
+          r.paymentType === req.paymentType &&
+          r.status === req.status
+        )
+
+        if (relatedRequests.length > 1) {
+          // Create a grouped entry
+          const totalBase = relatedRequests.reduce((sum, r) => sum + (r.baseAmount || 0), 0)
+          const totalLateFee = relatedRequests.reduce((sum, r) => sum + (r.lateFee || 0), 0)
+          const totalAmount = relatedRequests.reduce((sum, r) => sum + (r.totalAmount || 0), 0)
+          const periods = relatedRequests.map(r => r.billingPeriod).join(', ')
+
+          grouped.push({
+            ...req,
+            id: req.id, // Use first request's ID for approval/reject
+            billingPeriod: periods,
+            baseAmount: totalBase,
+            lateFee: totalLateFee,
+            totalAmount: totalAmount,
+            isGrouped: true,
+            groupedIds: relatedRequests.map(r => r.id),
+            groupedRequests: relatedRequests
+          })
+
+          // Mark all related requests as processed
+          relatedRequests.forEach(r => processed.add(r.id))
+        } else {
+          grouped.push(req)
+          processed.add(req.id)
+        }
+      } else {
+        grouped.push(req)
+        processed.add(req.id)
+      }
+    })
+
+    return grouped
+  }, [requests])
+
   // Ledger by student
   const ledgerByStudent = useMemo(() => {
     const map = {}
@@ -524,36 +576,42 @@ export default function FeeManagement() {
 
   const paged = useMemo(() => paginate(filtered, page, 12), [filtered, page])
 
-  // Approve a payment request
+  // Approve a payment request (or grouped requests for quarterly payments)
   const handleApprove = async (req) => {
     setApproving(req.id)
     try {
       const now = Timestamp.fromDate(new Date())
       const adminName = adminUser?.adminName || adminUser?.name || 'Admin'
 
-      // 1. Mark the payment_request as Paid
-      await updatePaymentRequest(req.id, {
-        status:          'Paid',
-        verifiedBy:      adminName,
-        verifiedAt:      now,
-        rejectionReason: null,
-      })
+      // If this is a grouped request (quarterly/half-yearly/annual), approve all related requests
+      const requestsToApprove = req.isGrouped ? req.groupedRequests : [req]
 
-      // 2. Upsert the fee_ledger entry — creates it if it doesn't exist yet
-      await upsertFeeLedgerEntry(req.studentId, req.periodKey, {
-        billingType: req.paymentType,
-        baseFee:     req.baseAmount,
-        fine:        req.lateFee || 0,
-        totalPayable: req.totalAmount,
-        status:      'Paid',
-        amountPaid:  req.totalAmount,
-        paidAt:      now,
-        verifiedBy:  adminName,
-        referenceId: req.referenceId,
-        paymentDate: req.paymentDate,
-      })
+      for (const request of requestsToApprove) {
+        // 1. Mark the payment_request as Paid
+        await updatePaymentRequest(request.id, {
+          status:          'Paid',
+          verifiedBy:      adminName,
+          verifiedAt:      now,
+          rejectionReason: null,
+        })
 
-      toast.success(`${req.studentName} — ${req.billingPeriod} approved!`)
+        // 2. Upsert the fee_ledger entry — creates it if it doesn't exist yet
+        await upsertFeeLedgerEntry(request.studentId, request.periodKey, {
+          billingType: request.paymentType,
+          baseFee:     request.baseAmount,
+          fine:        request.lateFee || 0,
+          totalPayable: request.totalAmount,
+          status:      'Paid',
+          amountPaid:  request.totalAmount,
+          paidAt:      now,
+          verifiedBy:  adminName,
+          referenceId: request.referenceId,
+          paymentDate: request.paymentDate,
+        })
+      }
+
+      const periodLabel = req.isGrouped ? `${requestsToApprove.length} periods` : req.billingPeriod
+      toast.success(`${req.studentName} — ${periodLabel} approved!`)
       loadAll()
     } catch (err) {
       toast.error(err.message)
@@ -708,7 +766,7 @@ export default function FeeManagement() {
       {tab === 'requests' && (
         <div className="card overflow-hidden">
           {loading ? <div className="flex justify-center p-12"><LoadingSpinner size="lg" /></div>
-          : requests.length === 0 ? (
+          : groupedRequests.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-gray-400">
               <HiCheckCircle className="w-12 h-12 mb-3 opacity-30" />
               <p>No payment requests yet</p>
@@ -732,7 +790,7 @@ export default function FeeManagement() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {requests.map((req) => (
+                  {groupedRequests.map((req) => (
                     <tr key={req.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${req.status === 'Verification Pending' ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}`}>
                       <td className="table-cell">
                         <p className="font-medium text-sm text-gray-900 dark:text-white">{req.studentName}</p>
@@ -741,6 +799,7 @@ export default function FeeManagement() {
                       <td className="table-cell hidden sm:table-cell text-sm text-gray-500">{req.className}</td>
                       <td className="table-cell">
                         <p className="font-medium text-sm text-gray-900 dark:text-white">{req.billingPeriod}</p>
+                        {req.isGrouped && <p className="text-xs text-blue-500 mt-0.5">{req.groupedRequests.length} months combined</p>}
                       </td>
                       <td className="table-cell hidden md:table-cell"><span className="badge-info">{req.paymentType}</span></td>
                       <td className="table-cell text-sm">{formatCurrency(req.baseAmount)}</td>
