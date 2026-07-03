@@ -372,6 +372,21 @@ export default function Students() {
         // Generate a unique student ID if not provided
         if (!student.studentId) student.studentId = generateStudentId()
         
+        // Set defaults for required fields if missing
+        if (!student.className) student.className = 'Not Assigned'
+        if (!student.caseHistoryDate && student.dob) {
+          // Default admission date to 2020-04-01 if not provided
+          student.caseHistoryDate = Timestamp.fromDate(new Date('2020-04-01'))
+        }
+        if (!student.gender) student.gender = ''
+        if (!student.nationality) student.nationality = 'Indian'
+        
+        // Generate email if not provided (using studentId)
+        if (!student.email) {
+          const cleanId = student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')
+          student.email = `${cleanId}@school.edu`
+        }
+        
         // Use studentId as document ID to avoid duplicates
         const docId = student.studentId.toLowerCase().replace(/[^a-z0-9]/g, '')
         

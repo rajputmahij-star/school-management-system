@@ -9,6 +9,8 @@ const COL_MAP = {
   'student name':           'studentName',
   'studentname':            'studentName',
   'name':                   'studentName',
+  'phone':                  'fatherContact',
+  'phone number':           'fatherContact',
   'email':                  'email',
   'email address':          'email',
   'date of birth':          'dob',
@@ -30,8 +32,10 @@ const COL_MAP = {
   'classeducator':          'classEducator',
   'teacher':                'classEducator',
   'gr number':              'grNumber',
+  'g.r. number':            'grNumber',
   'grnumber':               'grNumber',
   'gr no':                  'grNumber',
+  'g.r. no':                'grNumber',
   'date of admission':      'caseHistoryDate',
   'admission date':         'caseHistoryDate',
   'admissiondate':          'caseHistoryDate',
@@ -54,8 +58,10 @@ const COL_MAP = {
   'nios fee':               'niosFee',
   'niosfee':                'niosFee',
   'father name':            'fatherName',
+  "father's name":          'fatherName',
   'fathername':             'fatherName',
   'mother name':            'motherName',
+  "mother's name":          'motherName',
   'mothername':             'motherName',
   'father qualification':   'fatherQualification',
   'mother qualification':   'motherQualification',
@@ -65,7 +71,7 @@ const COL_MAP = {
   'mother office address':  'motherOfficeAddress',
   'father contact':         'fatherContact',
   'mother contact':         'motherContact',
-  'home address':           'homeAddress',
+  'home address':           '_homeAddressPart', // Special marker for multi-column address
 }
 
 // ─── Normalise a header string to lookup key ─────────────────────────────────
@@ -75,22 +81,36 @@ const normalise = (str) => String(str || '').trim().toLowerCase().replace(/\s+/g
 const parseDate = (val) => {
   if (!val) return null
   if (val instanceof Date) return val
+  
   // Excel serial number
   if (typeof val === 'number') {
     return XLSX.SSF.parse_date_code(val)
       ? new Date(Math.round((val - 25569) * 86400 * 1000))
       : null
   }
-  // String like "2020-06-15" or "15/06/2020"
-  const d = new Date(String(val))
-  if (!isNaN(d.getTime())) return d
-  // Try DD/MM/YYYY
-  const parts = String(val).split('/')
-  if (parts.length === 3) {
-    const [dd, mm, yyyy] = parts
-    const d2 = new Date(`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`)
-    if (!isNaN(d2.getTime())) return d2
+  
+  const str = String(val).trim()
+  
+  // Try DD-MM-YYYY (like "13-03-2015")
+  const dashMatch = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/)
+  if (dashMatch) {
+    const [, dd, mm, yyyy] = dashMatch
+    const d = new Date(`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`)
+    if (!isNaN(d.getTime())) return d
   }
+  
+  // Try DD/MM/YYYY
+  const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (slashMatch) {
+    const [, dd, mm, yyyy] = slashMatch
+    const d = new Date(`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`)
+    if (!isNaN(d.getTime())) return d
+  }
+  
+  // Try ISO format or standard Date parsing
+  const d = new Date(str)
+  if (!isNaN(d.getTime())) return d
+  
   return null
 }
 
@@ -121,12 +141,43 @@ export const mapRowsToStudents = (rows) => {
   rows.forEach((row, idx) => {
     const rowNum = idx + 2 // 1-indexed, +1 for header row
     const student = {}
+    const addressParts = []
 
-    // Map each column
+    // Map each column — collect address parts separately
     Object.entries(row).forEach(([col, val]) => {
-      const key = COL_MAP[normalise(col)]
-      if (key) student[key] = String(val || '').trim()
+      const norm = normalise(col)
+      const key = COL_MAP[norm]
+      const strVal = String(val || '').trim()
+      
+      if (!strVal) return // skip empty values
+      
+      if (key === '_homeAddressPart') {
+        // Accumulate multiple "Home address" columns into one string
+        addressParts.push(strVal)
+      } else if (key) {
+        student[key] = strVal
+      }
     })
+
+    // Merge address parts (flat number, street, city, state, pin)
+    if (addressParts.length > 0) {
+      student.homeAddress = addressParts
+        .filter(p => p && p.trim())
+        .join(', ')
+        .replace(/,\s*,/g, ',') // remove double commas
+        .trim()
+    }
+
+    // Clean up Aadhar — only keep if it's a 12-digit number
+    if (student.aadharNumber) {
+      const cleaned = student.aadharNumber.replace(/\s+/g, '')
+      if (/^\d{12}$/.test(cleaned)) {
+        student.aadharNumber = cleaned
+      } else {
+        // Values like "Not in Office Records", "Not Applied Yet" etc. — clear them
+        student.aadharNumber = ''
+      }
+    }
 
     // Validate required fields
     if (!student.studentName) {
