@@ -94,7 +94,7 @@ export default function EmployeeLayout() {
               <img src="/Trust Logo.avif" alt="Trust" className="w-12 h-12 object-contain rounded-lg flex-shrink-0" />
               <img src="/image.png" alt="School" className="w-12 h-12 object-contain rounded-lg flex-shrink-0" />
               <div className="text-center">
-                <p className="font-school font-bold text-white leading-tight uppercase tracking-wide" style={{ fontSize: '24px' }}>
+                <p className="font-school font-bold text-orange-400 leading-tight uppercase tracking-wide" style={{ fontSize: '24px' }}>
                   ANAND SPECIAL SCHOOL
                 </p>
                 <p className="font-school text-blue-200 leading-tight" style={{ fontSize: '15px' }}>

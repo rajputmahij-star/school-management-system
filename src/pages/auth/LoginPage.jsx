@@ -85,7 +85,7 @@ export default function LoginPage() {
               <img src="/image.png" alt="School Logo"
                 className="w-16 h-16 object-contain rounded-xl ring-2 ring-white/20" />
             </div>
-            <h1 className="font-school text-2xl font-bold text-white tracking-wide uppercase">
+            <h1 className="font-school text-2xl font-bold text-orange-400 tracking-wide uppercase">
               ANAND SPECIAL SCHOOL
             </h1>
             <p className="text-white/70 text-xs mt-0.5">Mngd. By Anand Rehabilitation Trust</p>
