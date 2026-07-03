@@ -546,16 +546,10 @@ export default function Students() {
               <SF label="Mode of Transport"    value={form.modeOfTransport} onChange={h('modeOfTransport')} options={formOptions.transportOptions || DEFAULT_FORM_OPTIONS.transportOptions} />
 
               {/* ── Auto-calculated fee banner (not shown for NIOS Group) ── */}
-              {!isNiosGroup(form.className) && (
+              {!isNiosGroup(form.className) && form.dob && form.caseHistoryDate && (
               <div className="sm:col-span-2">
                 {(() => {
-                  if (!form.dob || !form.admissionDate) return (
-                    <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl text-xs text-gray-400 flex items-center gap-2">
-                      <HiExclamation className="w-4 h-4 flex-shrink-0" />
-                      Enter Date of Birth and Admission Date to auto-calculate the fee from fee rules.
-                    </div>
-                  )
-                  const tempStudent = { dob: form.dob, admissionDate: form.admissionDate }
+                  const tempStudent = { dob: form.dob, caseHistoryDate: form.caseHistoryDate }
                   const { fee, academicYear, bracket } = calculateStudentFee(feeRules, tempStudent)
                   if (fee === 0) return (
                     <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-xl text-xs text-yellow-700 dark:text-yellow-300 flex items-start gap-2">
@@ -571,11 +565,11 @@ export default function Students() {
                       <div className="flex items-center gap-2 text-xs text-green-700 dark:text-green-300">
                         <HiCheckCircle className="w-4 h-4 flex-shrink-0" />
                         <div>
-                          <span className="font-semibold">Fee rule matched</span>
+                          <span className="font-semibold">Monthly fee auto-calculated</span>
                           <span className="ml-2 text-green-600 dark:text-green-400">AY {academicYear} · Age {bracket?.minAge}{bracket?.maxAge !== '' ? `–${bracket?.maxAge}` : '+'}  yrs</span>
                         </div>
                       </div>
-                      <span className="font-bold text-green-700 dark:text-green-300 text-sm whitespace-nowrap">{formatCurrency(fee)}</span>
+                      <span className="font-bold text-green-700 dark:text-green-300 text-sm whitespace-nowrap">{formatCurrency(fee)}/month</span>
                     </div>
                   )
                 })()}
