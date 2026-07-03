@@ -83,14 +83,10 @@ export async function loadPdfLogos() {
 /**
  * Draw letterhead. Returns Y where body content starts.
  *
- * Header layout (A4 = 210mm wide, header = 44mm tall):
- *   [TrustLogo 30×30] [SchoolLogo 30×30]  |  ANAND SPECIAL SCHOOL (Sunday Grapes)
- *                                          |  Mngd. By Anand Rehabilitation Trust
- *   ─── vertical divider at 80mm ─────────┼──────────────────────────────────────
- *                                          |  Email / Contact / Address (right half)
- *
- * Sunday Grapes is a large display font — used at small point size (9–10pt)
- * so it renders at the correct visual weight without wrapping.
+ * Improved layout:
+ * - Logos side by side at the left
+ * - School name NEXT TO logos (not above)
+ * - Better spacing and sizing
  */
 export async function drawLetterhead(doc, logos, docTitle = '', subtitle = '') {
   const W = doc.internal.pageSize.width    // 210mm A4
@@ -99,78 +95,79 @@ export async function drawLetterhead(doc, logos, docTitle = '', subtitle = '') {
   await registerSundayGrapes(doc)
 
   // ── HEADER ────────────────────────────────────────────────────────────────
-  const HEADER_H = 44
+  const HEADER_H = 48
 
   doc.setFillColor(255, 255, 255)
   doc.rect(0, 0, W, HEADER_H, 'F')
 
-  // Logos (30×30mm each, 3mm gap between, 4mm from left edge)
-  const LS = 30
+  // Logos (28×28mm each, 3mm gap between, 4mm from left edge, 6mm from top)
+  const LS = 28
   const LP = 4
-  if (logos.trustLogo)  { try { doc.addImage(logos.trustLogo,  'PNG', LP,         7, LS, LS) } catch {} }
-  if (logos.schoolLogo) { try { doc.addImage(logos.schoolLogo, 'PNG', LP+LS+3, 7, LS, LS) } catch {} }
+  const LOGO_Y = 8
+  if (logos.trustLogo)  { try { doc.addImage(logos.trustLogo,  'PNG', LP,         LOGO_Y, LS, LS) } catch {} }
+  if (logos.schoolLogo) { try { doc.addImage(logos.schoolLogo, 'PNG', LP+LS+3, LOGO_Y, LS, LS) } catch {} }
 
   // Vertical divider at 68mm (just after logos)
-  const DIV = LP + LS * 2 + 3 + 1   // ≈ 68mm
+  const DIV = LP + LS * 2 + 3 + 2   // ≈ 69mm
   doc.setDrawColor(210, 210, 210)
   doc.setLineWidth(0.4)
-  doc.line(DIV, 5, DIV, HEADER_H - 3)
+  doc.line(DIV, 6, DIV, HEADER_H - 3)
 
-  // ── LEFT TEXT: school name + trust name ───────────────────────────────────
-  // Sunday Grapes is a display font — at 9pt it's visually about 18pt in helvetica
-  // We keep it on ONE line by using a small point size
-  const LX = LP  // align text under logos (left-aligned)
+  // ── LEFT TEXT: school name + trust name (next to logos, vertically centered) ─
+  const TEXT_X = LP
+  const TEXT_Y = LOGO_Y + LS + 5  // Below logos
 
-  doc.setTextColor(10, 90, 40)
+  doc.setTextColor(255, 120, 0)  // Orange color
   try {
     doc.setFont('SundayGrapes', 'normal')
-    doc.setFontSize(9)   // Sunday Grapes renders large — 9pt ≈ looks like 18–20pt
+    doc.setFontSize(11)   // Larger for better visibility
   } catch {
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(14)
+    doc.setFontSize(16)
   }
-  doc.text('ANAND SPECIAL SCHOOL', LX, 6)
+  doc.text('ANAND SPECIAL SCHOOL', TEXT_X, TEXT_Y)
 
   doc.setTextColor(170, 25, 25)
   try {
     doc.setFont('SundayGrapes', 'normal')
-    doc.setFontSize(6)   // 6pt Sunday Grapes ≈ 11–12pt visually
+    doc.setFontSize(7)
   } catch {
     doc.setFont('helvetica', 'italic')
-    doc.setFontSize(8)
+    doc.setFontSize(9)
   }
-  doc.text('Mngd. By Anand Rehabilitation Trust', LX, 13)
+  doc.text('Mngd. By Anand Rehabilitation Trust', TEXT_X, TEXT_Y + 5)
 
   // ── RIGHT: contact details ────────────────────────────────────────────────
   const CX = DIV + 4   // contact block left edge
+  const CY_START = 11  // Start higher for better balance
 
   doc.setFont('helvetica', 'normal')
 
   // Email row
-  doc.setFontSize(7)
+  doc.setFontSize(7.5)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(10, 90, 40)
-  doc.text('Email:', CX, 12)
+  doc.text('Email:', CX, CY_START)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(40, 40, 40)
-  doc.text('anandrehabilitationtrust@gmail.com', CX + 13, 12)
+  doc.text('anandrehabilitationtrust@gmail.com', CX + 13, CY_START)
 
   // Contact row
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(10, 90, 40)
-  doc.text('Contact:', CX, 19)
+  doc.text('Contact:', CX, CY_START + 7)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(40, 40, 40)
-  doc.text('+91-9467041819, +91-261-4550090', CX + 16, 19)
+  doc.text('+91-9467041819, +91-261-4550090', CX + 16, CY_START + 7)
 
   // Address rows
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(10, 90, 40)
-  doc.text('Address:', CX, 26)
+  doc.text('Address:', CX, CY_START + 14)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(40, 40, 40)
-  doc.text('101, Shavion Shopping Paradise, Gaurav Path Road,', CX + 5, 32)
-  doc.text('Palanpur, Surat - 395009 (Gujarat-India)',          CX + 5, 38)
+  doc.text('101, Shavion Shopping Paradise, Gaurav Path Road,', CX + 5, CY_START + 20)
+  doc.text('Palanpur, Surat - 395009 (Gujarat-India)',          CX + 5, CY_START + 26)
 
   // ── ACCENT STRIPE ─────────────────────────────────────────────────────────
   doc.setFillColor(10, 90, 40)
@@ -186,7 +183,7 @@ export async function drawLetterhead(doc, logos, docTitle = '', subtitle = '') {
     doc.rect(0, y, W, 13, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(12)
+    doc.setFontSize(13)
     doc.text(docTitle, W / 2, y + 9, { align: 'center' })
     y += 13
   }
@@ -194,13 +191,13 @@ export async function drawLetterhead(doc, logos, docTitle = '', subtitle = '') {
   // ── SUBTITLE ──────────────────────────────────────────────────────────────
   if (subtitle) {
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8.5)
+    doc.setFontSize(9)
     doc.setTextColor(70, 70, 70)
     doc.text(subtitle, W / 2, y + 6, { align: 'center' })
-    y += 11
+    y += 12
   }
 
-  const contentStartY = y + 3
+  const contentStartY = y + 4
 
   // ── FOOTER ────────────────────────────────────────────────────────────────
   const FOOTER_TOP = H - 22
@@ -240,7 +237,7 @@ export async function drawLetterhead(doc, logos, docTitle = '', subtitle = '') {
   if (logos.trustLogoWatermark) {
     try {
       const bodyH  = FOOTER_TOP - contentStartY
-      const wmSize = Math.min(W * 0.60, bodyH * 0.72)
+      const wmSize = Math.min(W * 0.55, bodyH * 0.65)
       const wmX    = (W - wmSize) / 2
       const wmY    = contentStartY + (bodyH - wmSize) / 2
       doc.addImage(logos.trustLogoWatermark, 'PNG', wmX, wmY, wmSize, wmSize)

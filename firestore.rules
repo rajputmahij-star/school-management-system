@@ -153,5 +153,13 @@ service cloud.firestore {
         request.resource.data.studentId == request.auth.uid;
       allow delete: if isAdmin();
     }
+
+    // ─── Receipt Counters ─────────────────────────────────────────────────────
+    // System-generated receipt numbers for fee and salary payments
+    match /receipt_counters/{docId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false; // Never delete receipt counters
+    }
   }
 }

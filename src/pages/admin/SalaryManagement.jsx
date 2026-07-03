@@ -10,7 +10,8 @@ import {
 import { formatCurrency, computeNetSalary, getMonthDays, formatDate } from '../../utils/helpers'
 import { downloadSalarySlip, viewSalarySlip, printSalarySlip } from '../../utils/salarySlip'
 import { exportSalaryToExcel } from '../../utils/excelExport'
-import { generateSalaryReport } from '../../utils/pdfExport'
+import { generateSalaryReport, generateSalaryReceipt } from '../../utils/pdfExport'
+import { generateReceiptNumber } from '../../utils/receiptGenerator'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import Modal from '../../components/ui/Modal'
 import toast from 'react-hot-toast'
@@ -119,12 +120,16 @@ export default function SalaryManagement() {
     if (!refId.trim()) { toast.error('Reference ID is required'); return }
     setMarking(true)
     try {
+      // Generate receipt number for this salary payment
+      const receiptNumber = await generateReceiptNumber('salary')
+
       await updateDocument('salaries', paidDialog.salary.id, {
         status:      'Paid',
         referenceId: refId.trim(),
         payDate:     Timestamp.fromDate(new Date(payDate)),
+        receiptNumber, // Store receipt number
       })
-      toast.success('Salary marked as Paid')
+      toast.success(`Salary marked as Paid! Receipt: ${receiptNumber}`)
       setPaidDialog({ open: false, salary: null, emp: null })
       loadData()
     } catch (err) {
@@ -315,6 +320,14 @@ export default function SalaryManagement() {
                             className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg">
                             <HiDownload className="w-4 h-4 text-blue-500" />
                           </button>
+                          {s && s.status === 'Paid' && (
+                            <button 
+                              onClick={() => generateSalaryReceipt(s, emp)} 
+                              title="Download Receipt"
+                              className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg">
+                              <HiDocumentText className="w-4 h-4 text-green-500" />
+                            </button>
+                          )}
                           {s && s.status !== 'Paid' && (
                             <button onClick={() => openMarkPaid(emp)} title="Mark Paid"
                               className="flex items-center gap-1 text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1.5 rounded-lg whitespace-nowrap">

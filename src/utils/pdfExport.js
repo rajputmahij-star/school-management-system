@@ -61,10 +61,13 @@ export const generateRequestReceipt = async (req, student) => {
   const IW    = W - M * 2
   const logos = await loadPdfLogos()
 
+  // Use the receipt number from the request if available
+  const receiptNo = req.receiptNumber || req.id?.slice(0, 8).toUpperCase() || 'N/A'
+
   let y = await drawLetterhead(
     doc, logos,
     'FEE RECEIPT',
-    `Date: ${formatDate(req.verifiedAt)}  |  Receipt No: ${str(req.id?.slice(0, 8).toUpperCase())}`
+    `Date: ${formatDate(req.verifiedAt)}  |  Receipt No: ${receiptNo}`
   )
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -73,14 +76,6 @@ export const generateRequestReceipt = async (req, student) => {
     doc.setLineWidth(0.25)
     doc.line(M, y - 1, M + IW, y - 1)
     y += 3
-  }
-
-  // Card — white fill so it's readable, slight border
-  const card = (h) => {
-    doc.setFillColor(255, 255, 255)
-    doc.setDrawColor(200, 210, 220)
-    doc.setLineWidth(0.4)
-    doc.roundedRect(M, y, IW, h, 2, 2, 'FD')
   }
 
   const band = (title, r = 15, g = 100, b = 50) => {
@@ -101,17 +96,19 @@ export const generateRequestReceipt = async (req, student) => {
     doc.text(label, M + 4, y)
     doc.setFont('helvetica', bold ? 'bold' : 'normal')
     doc.setTextColor(...valClr)
-    doc.text(str(value), M + IW - 4, y, { align: 'right' })
-    y += 8
+    const valueStr = str(value)
+    doc.text(valueStr, M + IW - 4, y, { align: 'right' })
+    y += 7
   }
 
   // ── STUDENT INFO ──────────────────────────────────────────────────────────
+  y += 2
   band('STUDENT INFORMATION', 15, 100, 50)
   field('Student Name:', student?.studentName || req.studentName)
   field('Class:', student?.className || req.className)
   field('GR Number:', student?.grNumber)
   field('Student ID:', student?.studentId)
-  y += 3
+  y += 4
 
   // ── FEE DETAILS ───────────────────────────────────────────────────────────
   band('FEE DETAILS', 22, 55, 122)
@@ -126,12 +123,12 @@ export const generateRequestReceipt = async (req, student) => {
   const remaining = Math.max(0, totalFee - paid)
 
   hr()
-  field('Total Fee:', fmtRs(totalFee))
+  field('Total Fee:', fmtRs(totalFee), false)
   field('Amount Paid:', fmtRs(paid), true, [10, 90, 40])
   if (remaining > 0) {
     field('Remaining Balance:', fmtRs(remaining), true, [170, 25, 25])
   }
-  y += 3
+  y += 4
 
   // ── AMOUNT PAID BAR ───────────────────────────────────────────────────────
   doc.setFillColor(10, 90, 40)
@@ -141,7 +138,7 @@ export const generateRequestReceipt = async (req, student) => {
   doc.setFontSize(11)
   doc.text('AMOUNT PAID', M + 5, y + 9)
   doc.text(fmtRs(paid), M + IW - 5, y + 9, { align: 'right' })
-  y += 17
+  y += 18
 
   // ── VERIFICATION ─────────────────────────────────────────────────────────
   band('VERIFICATION', 22, 55, 122)
@@ -158,7 +155,110 @@ export const generateRequestReceipt = async (req, student) => {
   doc.setTextColor(100, 100, 100)
   doc.text('Thank you. This is a computer-generated receipt and does not require a signature.', W / 2, y, { align: 'center' })
 
-  doc.save(`fee-receipt-${str(req.id?.slice(0, 8))}.pdf`)
+  doc.save(`fee-receipt-${receiptNo}.pdf`)
+}
+
+// ─── Salary receipt ───────────────────────────────────────────────────────────
+export const generateSalaryReceipt = async (salary, employee) => {
+  const doc   = new jsPDF({ format: 'a4', unit: 'mm' })
+  const W     = doc.internal.pageSize.width
+  const H     = doc.internal.pageSize.height
+  const M     = 14
+  const IW    = W - M * 2
+  const logos = await loadPdfLogos()
+
+  // Use the receipt number from the salary if available
+  const receiptNo = salary.receiptNumber || salary.id?.slice(0, 8).toUpperCase() || 'N/A'
+
+  let y = await drawLetterhead(
+    doc, logos,
+    'SALARY RECEIPT',
+    `Date: ${formatDate(salary.payDate)}  |  Receipt No: ${receiptNo}`
+  )
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const hr = () => {
+    doc.setDrawColor(210, 210, 210)
+    doc.setLineWidth(0.25)
+    doc.line(M, y - 1, M + IW, y - 1)
+    y += 3
+  }
+
+  const band = (title, r = 15, g = 100, b = 50) => {
+    doc.setFillColor(r, g, b)
+    doc.roundedRect(M, y, IW, 8, 1, 1, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.text(title, M + 4, y + 5.5)
+    doc.setTextColor(0, 0, 0)
+    y += 11
+  }
+
+  const field = (label, value, bold = false, valClr = [15, 23, 42]) => {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(80, 80, 80)
+    doc.text(label, M + 4, y)
+    doc.setFont('helvetica', bold ? 'bold' : 'normal')
+    doc.setTextColor(...valClr)
+    const valueStr = str(value)
+    doc.text(valueStr, M + IW - 4, y, { align: 'right' })
+    y += 7
+  }
+
+  // ── EMPLOYEE INFO ─────────────────────────────────────────────────────────
+  y += 2
+  band('EMPLOYEE INFORMATION', 15, 100, 50)
+  field('Employee Name:', employee?.employeeName || salary.employeeName)
+  field('Designation:', employee?.designation || salary.designation)
+  field('Employee ID:', employee?.employeeId || salary.employeeId)
+  y += 4
+
+  // ── SALARY DETAILS ────────────────────────────────────────────────────────
+  band('SALARY DETAILS', 22, 55, 122)
+  const MONTHS = ['January','February','March','April','May','June',
+    'July','August','September','October','November','December']
+  const monthName = MONTHS[(salary.month || 1) - 1]
+  field('Period:', `${monthName} ${salary.year}`)
+  field('Monthly Salary:', fmtRs(salary.monthlySalary))
+  field('Present Days:', `${salary.presentDays || 0} / ${salary.monthDays || 30}`)
+  field('Salary Earned:', fmtRs(salary.salaryEarned || 0))
+  if (salary.deduction > 0) {
+    field('Deduction:', fmtRs(salary.deduction), false, [170, 25, 25])
+  }
+  if (salary.smcTax > 0) {
+    field('SMC Tax:', fmtRs(salary.smcTax), false, [170, 25, 25])
+  }
+
+  hr()
+  field('Net Salary:', fmtRs(salary.netSalary), true, [10, 90, 40])
+  y += 4
+
+  // ── NET SALARY BAR ────────────────────────────────────────────────────────
+  doc.setFillColor(10, 90, 40)
+  doc.roundedRect(M, y, IW, 13, 2, 2, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.text('NET SALARY PAID', M + 5, y + 9)
+  doc.text(fmtRs(salary.netSalary), M + IW - 5, y + 9, { align: 'right' })
+  y += 18
+
+  // ── PAYMENT DETAILS ───────────────────────────────────────────────────────
+  band('PAYMENT DETAILS', 22, 55, 122)
+  field('Payment Status:', 'PAID', true, [10, 90, 40])
+  field('Reference ID:', salary.referenceId)
+  field('Payment Date:', formatDate(salary.payDate))
+  y += 6
+
+  // ── THANK YOU NOTE ────────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'italic')
+  doc.setFontSize(8)
+  doc.setTextColor(100, 100, 100)
+  doc.text('Thank you. This is a computer-generated receipt and does not require a signature.', W / 2, y, { align: 'center' })
+
+  doc.save(`salary-receipt-${receiptNo}.pdf`)
 }
 
 // ─── Legacy Razorpay receipt (kept for backward compat) ──────────────────────

@@ -7,7 +7,7 @@
  * This creates:
  *  - 1 Admin user entry
  *  - Sample settings
- *
+ 
  * To use:
  * 1. Create users in Firebase Authentication console (Email/Password)
  * 2. Note their UIDs
