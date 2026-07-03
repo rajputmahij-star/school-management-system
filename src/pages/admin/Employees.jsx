@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   HiPlus, HiSearch, HiPencil, HiTrash, HiEye,
   HiDownload, HiKey, HiUserRemove, HiUserAdd,
+  HiUpload, HiTemplate, HiCheckCircle, HiExclamation,
 } from 'react-icons/hi'
 import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument } from '../../firebase/firestore'
 import {
@@ -11,6 +12,7 @@ import {
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, generateEmployeeId, formatCurrency, paginate } from '../../utils/helpers'
 import { exportEmployeesToExcel } from '../../utils/excelExport'
+import { parseExcelFile, mapRowsToEmployees, downloadEmployeeImportTemplate } from '../../utils/excelImport'
 import { generateEmployeeReport } from '../../utils/pdfExport'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
@@ -18,7 +20,8 @@ import Pagination from '../../components/ui/Pagination'
 import ImageUpload from '../../components/ui/ImageUpload'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import toast from 'react-hot-toast'
-import { Timestamp } from 'firebase/firestore'
+import { Timestamp, doc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { db } from '../../firebase/config'
 
 import { SCHOOL_CLASSES, DEFAULT_FORM_OPTIONS } from '../../utils/helpers'
 
@@ -79,6 +82,12 @@ export default function Employees() {
   const [pwModal, setPwModal]     = useState({ open: false, emp: null })
   const [pwForm, setPwForm]       = useState({ current: '', newPw: '', confirm: '' })
   const [deleteDialog, setDeleteDialog] = useState({ open: false, uid: null, name: '' })
+  const [importModal,  setImportModal]  = useState(false)
+  const [importRows,   setImportRows]   = useState([])
+  const [importErrors, setImportErrors] = useState([])
+  const [importing,    setImporting]    = useState(false)
+  const [importDone,   setImportDone]   = useState(0)
+  const fileInputRef = useRef(null)
 
   // Stable handlers — prevent input remounting on every keystroke
   const handleEmail         = useCallback((e) => setForm((p) => ({ ...p, email:         e.target.value })), [])
@@ -276,6 +285,79 @@ export default function Employees() {
     } finally { setSaving(false) }
   }
 
+  // ─── Import handling ──────────────────────────────────────────────────────
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    try {
+      const rows = await parseExcelFile(file)
+      const { employees: mapped, errors } = mapRowsToEmployees(rows)
+      setImportRows(mapped)
+      setImportErrors(errors)
+      setImportDone(0)
+      if (errors.length === 0) {
+        toast.success(`${mapped.length} employees ready to import`)
+      } else {
+        toast.error(`Found ${errors.length} error(s) — check and fix`)
+      }
+    } catch (err) {
+      toast.error(err.message)
+      setImportRows([])
+      setImportErrors([err.message])
+    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleImport = async () => {
+    if (importRows.length === 0) { toast.error('No employees to import'); return }
+    if (importErrors.length > 0) {
+      toast.error('Fix errors before importing'); return
+    }
+    setImporting(true)
+    let success = 0
+    try {
+      for (const employee of importRows) {
+        // Generate employee ID if missing
+        if (!employee.employeeId) employee.employeeId = generateEmployeeId()
+        
+        // Set defaults
+        if (!employee.designation) employee.designation = 'Staff'
+        if (!employee.joiningDate) {
+          employee.joiningDate = Timestamp.fromDate(new Date())
+        }
+        
+        // Generate email if missing
+        if (!employee.email) {
+          const cleanId = employee.employeeId.toLowerCase().replace(/[^a-z0-9]/g, '')
+          employee.email = `${cleanId}@school.com`
+        }
+        
+        // Use employeeId as document ID
+        const docId = employee.employeeId.toLowerCase().replace(/[^a-z0-9]/g, '')
+        
+        await setDoc(doc(db, 'employees', docId), {
+          ...employee,
+          status: 'active',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+        
+        success++
+        setImportDone(success)
+      }
+      toast.success(`${success} employees imported successfully!`)
+      setImportModal(false)
+      setImportRows([])
+      setImportErrors([])
+      load()
+    } catch (err) {
+      toast.error(`Import failed after ${success} employees: ${err.message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -290,6 +372,9 @@ export default function Employees() {
           </button>
           <button onClick={() => exportEmployeesToExcel(employees)} className="btn-secondary text-sm">
             <HiDownload className="w-4 h-4" /> Excel
+          </button>
+          <button onClick={() => { setImportRows([]); setImportErrors([]); setImportDone(0); setImportModal(true) }} className="btn-secondary text-sm">
+            <HiUpload className="w-4 h-4" /> Import Excel
           </button>
           <button onClick={openAdd} className="btn-primary text-sm">
             <HiPlus className="w-4 h-4" /> Add Employee
@@ -585,6 +670,124 @@ export default function Employees() {
         title="Delete Employee"
         message={`Delete record for "${deleteDialog.name}"? This cannot be undone.`}
       />
+
+      {/* ── Excel Import Modal ── */}
+      <Modal isOpen={importModal} onClose={() => !importing && setImportModal(false)}
+        title="Import Employees from Excel" size="lg">
+        <div className="space-y-5">
+          <p className="text-sm text-gray-500">
+            Upload an Excel (.xlsx) file to bulk-import employees into Firebase.
+            Each row becomes one employee record.
+          </p>
+
+          {/* Step 1: Download template */}
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Step 1 — Download Template</p>
+              <p className="text-xs text-blue-500 mt-0.5">Fill in the template with your employee data, then upload it below.</p>
+            </div>
+            <button
+              onClick={downloadEmployeeImportTemplate}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium whitespace-nowrap"
+            >
+              <HiTemplate className="w-4 h-4" /> Download Template
+            </button>
+          </div>
+
+          {/* Step 2: Upload file */}
+          <div>
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Step 2 — Upload Filled Excel File</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileSelect}
+              className="hidden"
+              id="emp-excel-import-input"
+            />
+            <label
+              htmlFor="emp-excel-import-input"
+              className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/10 transition-colors"
+            >
+              <HiUpload className="w-8 h-8 text-gray-400 mb-2" />
+              <p className="text-sm text-gray-500">Click to choose .xlsx file</p>
+              <p className="text-xs text-gray-400 mt-0.5">Supports .xlsx and .xls</p>
+            </label>
+          </div>
+
+          {/* Errors */}
+          {importErrors.length > 0 && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl space-y-1 max-h-36 overflow-y-auto">
+              <p className="text-xs font-semibold text-red-600 flex items-center gap-1">
+                <HiExclamation className="w-4 h-4" /> {importErrors.length} Error(s)
+              </p>
+              {importErrors.map((e, i) => (
+                <p key={i} className="text-xs text-red-500">{e}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Preview table */}
+          {importRows.length > 0 && importErrors.length === 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                  <HiCheckCircle className="w-4 h-4 text-green-500" />
+                  {importRows.length} employees ready to import
+                </p>
+                {importing && (
+                  <p className="text-xs text-blue-500">{importDone} / {importRows.length} saved…</p>
+                )}
+              </div>
+              <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl max-h-52">
+                <table className="w-full text-xs min-w-[500px]">
+                  <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
+                    <tr>
+                      {['#', 'Employee ID', 'Name', 'Designation', 'Salary', 'Joining Date'].map((h) => (
+                        <th key={h} className="p-2 text-left font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {importRows.map((e, i) => (
+                      <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <td className="p-2 text-gray-400">{i + 1}</td>
+                        <td className="p-2 font-mono text-gray-700 dark:text-gray-300">{e.employeeId || '—'}</td>
+                        <td className="p-2 font-medium text-gray-900 dark:text-white">{e.employeeName}</td>
+                        <td className="p-2 text-gray-500">{e.designation || '—'}</td>
+                        <td className="p-2 text-gray-500">{e.monthlySalary ? `₹${e.monthlySalary}` : '—'}</td>
+                        <td className="p-2 text-gray-500">{e.joiningDate ? formatDate(e.joiningDate) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Re-importing the same Employee ID will update the existing record.
+              </p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={() => setImportModal(false)}
+              disabled={importing}
+              className="btn-secondary flex-1 justify-center"
+            >Cancel</button>
+            <button
+              onClick={handleImport}
+              disabled={importing || importRows.length === 0 || importErrors.length > 0}
+              className="btn-primary flex-1 justify-center"
+            >
+              {importing
+                ? <><LoadingSpinner size="sm" /> Importing {importDone}/{importRows.length}…</>
+                : <><HiUpload className="w-4 h-4" /> Import {importRows.length > 0 ? `${importRows.length} Employees` : ''}</>
+              }
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

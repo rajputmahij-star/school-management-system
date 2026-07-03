@@ -254,3 +254,110 @@ export const downloadImportTemplate = () => {
   XLSX.utils.book_append_sheet(wb, ws, 'Students Import')
   XLSX.writeFile(wb, 'student_import_template.xlsx')
 }
+
+// ─── Generate employee template ──────────────────────────────────────────────
+export const downloadEmployeeImportTemplate = () => {
+  const headers = [
+    'Employee ID', 'Employee Name', 'Email', 'Designation',
+    'Joining Date', 'Monthly Salary',
+    'PAN Number', 'Bank Name', 'Bank Account', 'IFSC Code',
+    'Assigned Class',
+  ]
+
+  const sample = [
+    'EMP001', 'Priya Sharma', 'priya@school.com', 'Educator',
+    '2020-04-01', '35000',
+    'ABCDE1234F', 'HDFC Bank', '12345678901234', 'HDFC0001234',
+    'Grade 5',
+  ]
+
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.aoa_to_sheet([headers, sample])
+  ws['!cols'] = headers.map(() => ({ wch: 20 }))
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Employees Import')
+  XLSX.writeFile(wb, 'employee_import_template.xlsx')
+}
+
+// ─── Map employee rows ────────────────────────────────────────────────────────
+const EMP_COL_MAP = {
+  'employee id':       'employeeId',
+  'employeeid':        'employeeId',
+  'emp id':            'employeeId',
+  'employee name':     'employeeName',
+  'employeename':      'employeeName',
+  'name':              'employeeName',
+  'email':             'email',
+  'email address':     'email',
+  'designation':       'designation',
+  'joining date':      'joiningDate',
+  'joiningdate':       'joiningDate',
+  'date of joining':   'joiningDate',
+  'monthly salary':    'monthlySalary',
+  'monthlysalary':     'monthlySalary',
+  'salary':            'monthlySalary',
+  'pan number':        'panNumber',
+  'pan':               'panNumber',
+  'pannumber':         'panNumber',
+  'bank name':         'bankName',
+  'bankname':          'bankName',
+  'bank':              'bankName',
+  'bank account':      'bankAccount',
+  'bankaccount':       'bankAccount',
+  'account number':    'bankAccount',
+  'ifsc code':         'ifscCode',
+  'ifsc':              'ifscCode',
+  'ifsccode':          'ifscCode',
+  'assigned class':    'assignedClass',
+  'assignedclass':     'assignedClass',
+  'class':             'assignedClass',
+}
+
+export const mapRowsToEmployees = (rows) => {
+  const errors = []
+  const employees = []
+
+  rows.forEach((row, idx) => {
+    const rowNum = idx + 2
+    const employee = {}
+
+    // Map columns
+    Object.entries(row).forEach(([col, val]) => {
+      const norm = normalise(col)
+      const key = EMP_COL_MAP[norm]
+      const strVal = String(val || '').trim()
+      if (strVal && key) {
+        employee[key] = strVal
+      }
+    })
+
+    // Validate
+    if (!employee.employeeName) {
+      errors.push(`Row ${rowNum}: Employee Name is required`)
+      return
+    }
+
+    // Convert dates
+    if (employee.joiningDate) {
+      const d = parseDate(employee.joiningDate)
+      if (d) {
+        employee.joiningDate = Timestamp.fromDate(d)
+      } else {
+        employee.joiningDate = null
+      }
+    } else {
+      employee.joiningDate = null
+    }
+
+    // Convert salary to number
+    if (employee.monthlySalary) {
+      employee.monthlySalary = Number(employee.monthlySalary) || 0
+    } else {
+      employee.monthlySalary = 0
+    }
+
+    employees.push(employee)
+  })
+
+  return { employees, errors }
+}
