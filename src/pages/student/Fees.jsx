@@ -507,7 +507,8 @@ export default function StudentFees() {
       cursor = new Date(y, m + 1, 1)
     }
 
-    return mergeLedger(periods, ledgerMap, lateFeeBase, lateFeePerDay).map((r) => ({
+    const caseHistoryDate = getFeeStartDate(userData) // Student's admission/enrollment date
+    return mergeLedger(periods, ledgerMap, lateFeeBase, lateFeePerDay, caseHistoryDate).map((r) => ({
       ...r,
       status: (r.status === 'Paid' && r.dueDate && new Date(r.dueDate) > new Date())
         ? 'Advance Paid' : r.status,

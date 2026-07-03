@@ -47,11 +47,26 @@ export const buildDueDate = (year, month, dueDay) =>
  * Calculate late fee for a single fee record.
  * lateFeeBase   - ₹250 (first overdue day)
  * lateFeePerDay - ₹25  (each additional day)
+ * caseHistoryDate - student's admission/enrollment date
  * Returns { daysLate, fine } based on today vs dueDate.
  * Returns { 0, 0 } if dueDate is in the future or today.
+ * Returns { 0, 0 } if caseHistoryDate is after the dueDate (student joined after due date).
  */
-export const calcLateFee = (dueDate, lateFeeBase = 250, lateFeePerDay = 25) => {
+export const calcLateFee = (dueDate, lateFeeBase = 250, lateFeePerDay = 25, caseHistoryDate = null) => {
   if (!dueDate) return { daysLate: 0, fine: 0 }
+  
+  // If student joined after the due date for this period, no late fee
+  if (caseHistoryDate) {
+    const caseDate = toJsDate(caseHistoryDate)
+    const due = new Date(dueDate)
+    due.setHours(0, 0, 0, 0)
+    caseDate.setHours(0, 0, 0, 0)
+    
+    if (isAfter(caseDate, due)) {
+      return { daysLate: 0, fine: 0 }
+    }
+  }
+  
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const due   = new Date(dueDate)
@@ -278,8 +293,9 @@ export const generatePeriods = (billingType, admissionDate, baseFee, dueDayOverr
  * Merge generated periods with existing ledger records from Firestore.
  * Returns enriched array ready for UI.
  * ledgerMap: { [periodKey]: { status, paidAt, razorpayId, amountPaid } }
+ * caseHistoryDate: student's admission/enrollment date
  */
-export const mergeLedger = (periods, ledgerMap, lateFeeBase, lateFeePerDay) => {
+export const mergeLedger = (periods, ledgerMap, lateFeeBase, lateFeePerDay, caseHistoryDate = null) => {
   return periods.map((p) => {
     const record  = ledgerMap[p.periodKey] || {}
     const isPaid  = record.status === 'Paid'
@@ -287,7 +303,7 @@ export const mergeLedger = (periods, ledgerMap, lateFeeBase, lateFeePerDay) => {
     const hasWaiver = record.waivedFine > 0
     const { daysLate, fine } = (isPaid || hasWaiver)
       ? { daysLate: 0, fine: 0 }
-      : calcLateFee(p.dueDate, lateFeeBase, lateFeePerDay)
+      : calcLateFee(p.dueDate, lateFeeBase, lateFeePerDay, caseHistoryDate)
     return {
       ...p,
       status:     record.status || 'Pending',

@@ -59,7 +59,8 @@ const StudentLedgerRow = ({ student, feeRules, ledgerEntries, feeSettings, setti
     ledgerEntries.forEach((e) => { ledgerMap[e.periodKey] = e })
     // Show Monthly periods by default for admin overview
     const periods = generatePeriods('Monthly', getFeeStartDate(student), baseFee, customDueDate, feeSettings)
-    return mergeLedger(periods, ledgerMap, lateFeeBase, lateFeePerDay)
+    const caseHistoryDate = getFeeStartDate(student) // Use the fee start date as case history date
+    return mergeLedger(periods, ledgerMap, lateFeeBase, lateFeePerDay, caseHistoryDate)
   }, [student, baseFee, customDueDate, feeSettings, ledgerEntries, settings])
 
   const paidCount    = merged.filter((r) => r.status === 'Paid').length
@@ -234,7 +235,8 @@ const FineWaiverModal = ({ students, feeRules, ledger, feeSettings, settings, ad
     const periods  = generatePeriods('Monthly', getFeeStartDate(s), baseFee, s.customDueDate || null, feeSettings)
     const lmap = {}
     ;(ledgerByStudent[selectedStudent] || []).forEach((e) => { lmap[e.periodKey] = e })
-    const merged = mergeLedger(periods, lmap, lateFeeBase, lateFeePerDay)
+    const caseHistoryDate = getFeeStartDate(s)
+    const merged = mergeLedger(periods, lmap, lateFeeBase, lateFeePerDay, caseHistoryDate)
     // Only unpaid periods that have a late fine AND are not already waived
     return merged.filter((r) => r.status !== 'Paid' && r.fine > 0 && !lmap[r.periodKey]?.waivedFine)
   }, [selectedStudent, students, feeRules, ledgerByStudent, feeSettings, lateFeeBase, lateFeePerDay])
@@ -521,7 +523,8 @@ export default function FeeManagement() {
       const periods = generatePeriods('Monthly', getFeeStartDate(s), baseFee, s.customDueDate || null, feeSettings)
       const lmap = {}
       ;(ledgerByStudent[s.uid || s.id] || []).forEach((e) => { lmap[e.periodKey] = e })
-      mergeLedger(periods, lmap, lateFeeBase, lateFeePerDay).forEach((r) => {
+      const caseHistoryDate = getFeeStartDate(s)
+      mergeLedger(periods, lmap, lateFeeBase, lateFeePerDay, caseHistoryDate).forEach((r) => {
         const isAdvance = r.status === 'Paid' && r.dueDate && new Date(r.dueDate) > todayTs
         if (isAdvance) { advanceCount++ }
         else if (r.status === 'Paid') paidCount++
@@ -557,7 +560,8 @@ export default function FeeManagement() {
         const periods = generatePeriods('Monthly', getFeeStartDate(s), baseFee, s.customDueDate || null, feeSettings)
         const lmap = {}
         ;(ledgerByStudent[s.uid || s.id] || []).forEach((e) => { lmap[e.periodKey] = e })
-        const rows = mergeLedger(periods, lmap, lb, lp)
+        const caseHistoryDate = getFeeStartDate(s)
+        const rows = mergeLedger(periods, lmap, lb, lp, caseHistoryDate)
 
         if (filterStatus === 'paid') {
           // student has at least one paid period (non-advance)
