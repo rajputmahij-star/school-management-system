@@ -11,6 +11,7 @@ import {
 } from '../../firebase/firestore'
 import { formatDate, formatCurrency, calculateStudentFee, paginate, getFeeStartDate, isNiosGroup } from '../../utils/helpers'
 import { generatePeriods, mergeLedger, BILLING_TYPES, calcLateFee } from '../../utils/feeEngine'
+import { generateReceiptNumber } from '../../utils/receiptGenerator'
 import Pagination from '../../components/ui/Pagination'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import Modal from '../../components/ui/Modal'
@@ -609,6 +610,9 @@ export default function FeeManagement() {
       const now = Timestamp.fromDate(new Date())
       const adminName = adminUser?.adminName || adminUser?.name || 'Admin'
 
+      // Generate receipt number for this fee payment
+      const receiptNumber = await generateReceiptNumber('fee')
+
       // If this is a grouped request (quarterly/half-yearly/annual), approve all related requests
       const requestsToApprove = req.isGrouped ? req.groupedRequests : [req]
 
@@ -619,6 +623,7 @@ export default function FeeManagement() {
           verifiedBy:      adminName,
           verifiedAt:      now,
           rejectionReason: null,
+          receiptNumber,   // Store receipt number
         })
 
         // 2. Upsert the fee_ledger entry — creates it if it doesn't exist yet
@@ -633,11 +638,12 @@ export default function FeeManagement() {
           verifiedBy:  adminName,
           referenceId: request.referenceId,
           paymentDate: request.paymentDate,
+          receiptNumber, // Store receipt number in ledger too
         })
       }
 
       const periodLabel = req.isGrouped ? `${requestsToApprove.length} periods` : req.billingPeriod
-      toast.success(`${req.studentName} — ${periodLabel} approved!`)
+      toast.success(`${req.studentName} — ${periodLabel} approved! Receipt: ${receiptNumber}`)
       loadAll()
     } catch (err) {
       toast.error(err.message)
