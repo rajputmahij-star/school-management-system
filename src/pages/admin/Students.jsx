@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle, HiUpload, HiTemplate, HiX } from 'react-icons/hi'
-import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument } from '../../firebase/firestore'
+import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument, invalidateStudentsCache } from '../../firebase/firestore'
 import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
@@ -108,10 +108,10 @@ export default function Students() {
 
   useEffect(() => { load() }, [])
 
-  const load = async () => {
+  const load = async (forceRefresh = false) => {
     try {
       setLoading(true)
-      const [s, r, cf, fo] = await Promise.all([getStudents(), getFeeRules(), getCustomFields(), getFormOptions()])
+      const [s, r, cf, fo] = await Promise.all([getStudents(forceRefresh), getFeeRules(), getCustomFields(), getFormOptions()])
       setStudents(s)
       setFeeRules(r)
       setCustomFields(cf?.studentFields || [])
@@ -407,7 +407,8 @@ export default function Students() {
       setImportModal(false)
       setImportRows([])
       setImportErrors([])
-      load()
+      invalidateStudentsCache()
+      load(true) // Force fresh fetch from Firestore
     } catch (err) {
       toast.error(`Import failed after ${success} students: ${err.message}`)
     } finally {
