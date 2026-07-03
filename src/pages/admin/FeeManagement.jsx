@@ -473,6 +473,11 @@ export default function FeeManagement() {
           const totalLateFee = relatedRequests.reduce((sum, r) => sum + (r.lateFee || 0), 0)
           const totalAmount = relatedRequests.reduce((sum, r) => sum + (r.totalAmount || 0), 0)
           const periods = relatedRequests.map(r => r.billingPeriod).join(', ')
+          
+          // For annual/yearly payment: show 12 months coverage but payment is for 11 months (1 month free)
+          const paidMonths = relatedRequests.length
+          const coverageMonths = req.paymentType === 'Annual' ? 12 : paidMonths
+          const freeMonths = req.paymentType === 'Annual' ? 1 : 0
 
           grouped.push({
             ...req,
@@ -483,7 +488,10 @@ export default function FeeManagement() {
             totalAmount: totalAmount,
             isGrouped: true,
             groupedIds: relatedRequests.map(r => r.id),
-            groupedRequests: relatedRequests
+            groupedRequests: relatedRequests,
+            paidMonths: paidMonths,
+            coverageMonths: coverageMonths,
+            freeMonths: freeMonths
           })
 
           // Mark all related requests as processed
@@ -830,9 +838,11 @@ export default function FeeManagement() {
                                 )}
                                 <div>
                                   <p className="font-medium text-sm text-gray-900 dark:text-white">
-                                    {req.groupedRequests.length} months combined
+                                    {req.coverageMonths} months
                                   </p>
-                                  <p className="text-xs text-blue-500 mt-0.5">Click to {expandedRows.has(req.id) ? 'collapse' : 'expand'}</p>
+                                  <p className="text-xs text-blue-500 mt-0.5">
+                                    {req.paymentType} payment{req.freeMonths > 0 ? ` (paid for ${req.paidMonths} months)` : ''}
+                                  </p>
                                 </div>
                               </button>
                             </div>
