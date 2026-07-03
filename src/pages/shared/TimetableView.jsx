@@ -470,10 +470,13 @@ export default function TimetableView({ className, canEdit = false }) {
 
       <style>{`
         @media print {
-          /* Hide everything except the timetable */
-          body > *:not(.print-area) { display: none !important; }
-          .print-area { display: block !important; }
-          .no-print { display: none !important; }
+          /* Hide non-print elements */
+          .no-print,
+          button,
+          .btn-primary,
+          .btn-secondary {
+            display: none !important;
+          }
           
           /* Ensure colors and formatting are preserved */
           * {
@@ -482,13 +485,20 @@ export default function TimetableView({ className, canEdit = false }) {
             color-adjust: exact !important;
           }
           
-          /* Remove interactive elements */
-          button, .btn-primary, .btn-secondary { display: none !important; }
+          /* Show the print area */
+          .print-area {
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
           
           /* Preserve table structure */
           table {
             page-break-inside: auto;
             border-collapse: collapse !important;
+            width: 100% !important;
           }
           
           tr {
@@ -500,18 +510,13 @@ export default function TimetableView({ className, canEdit = false }) {
             page-break-inside: avoid;
           }
           
-          /* Ensure all inline styles are preserved */
-          [style] {
-            all: revert;
-          }
-          
           /* Print margins */
           @page {
-            margin: 1cm;
+            margin: 0.5cm;
             size: landscape;
           }
           
-          /* Hide edit mode indicators */
+          /* Remove hover effects */
           .hover\\:ring-2,
           .hover\\:ring-inset,
           .hover\\:ring-blue-400 {
@@ -521,6 +526,11 @@ export default function TimetableView({ className, canEdit = false }) {
           /* Remove cursor pointer in print */
           * {
             cursor: default !important;
+          }
+          
+          /* Remove rounded corners and shadows for print */
+          .rounded-2xl {
+            border-radius: 0 !important;
           }
         }
       `}</style>
