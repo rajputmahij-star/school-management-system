@@ -419,6 +419,7 @@ export default function FeeManagement() {
   const [rejectTarget, setRejectTarget] = useState(null)
   const [approving,    setApproving]    = useState(null)
   const [waiverOpen,   setWaiverOpen]   = useState(false)
+  const [expandedRows, setExpandedRows] = useState(new Set()) // Track which grouped rows are expanded
 
   useEffect(() => { loadAll() }, [])
 
@@ -575,6 +576,19 @@ export default function FeeManagement() {
   }, [students, search, filterBilling, filterStatus, feeRules, feeSettings, ledgerByStudent, settings])
 
   const paged = useMemo(() => paginate(filtered, page, 12), [filtered, page])
+
+  // Toggle expanded state for grouped payment rows
+  const toggleExpanded = (reqId) => {
+    setExpandedRows((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(reqId)) {
+        newSet.delete(reqId)
+      } else {
+        newSet.add(reqId)
+      }
+      return newSet
+    })
+  }
 
   // Approve a payment request (or grouped requests for quarterly payments)
   const handleApprove = async (req) => {
@@ -791,56 +805,117 @@ export default function FeeManagement() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {groupedRequests.map((req) => (
-                    <tr key={req.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${req.status === 'Verification Pending' ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}`}>
-                      <td className="table-cell">
-                        <p className="font-medium text-sm text-gray-900 dark:text-white">{req.studentName}</p>
-                        <p className="text-xs text-gray-400">{formatDate(req.submittedAt)}</p>
-                      </td>
-                      <td className="table-cell hidden sm:table-cell text-sm text-gray-500">{req.className}</td>
-                      <td className="table-cell">
-                        <p className="font-medium text-sm text-gray-900 dark:text-white">{req.billingPeriod}</p>
-                        {req.isGrouped && <p className="text-xs text-blue-500 mt-0.5">{req.groupedRequests.length} months combined</p>}
-                      </td>
-                      <td className="table-cell hidden md:table-cell"><span className="badge-info">{req.paymentType}</span></td>
-                      <td className="table-cell text-sm">{formatCurrency(req.baseAmount)}</td>
-                      <td className="table-cell hidden lg:table-cell">
-                        {req.lateFee > 0 ? <span className="text-red-500 text-sm">{formatCurrency(req.lateFee)}</span> : <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="table-cell font-bold text-sm">{formatCurrency(req.totalAmount)}</td>
-                      <td className="table-cell hidden md:table-cell text-xs font-mono text-gray-600 dark:text-gray-400">{req.referenceId}</td>
-                      <td className="table-cell hidden lg:table-cell text-sm text-gray-500">{req.paymentDate || '—'}</td>
-                      <td className="table-cell">
-                        <div className="space-y-1">
-                          <StatusBadge status={req.status} />
-                          {req.status === 'Rejected' && req.rejectionReason && (
-                            <p className="text-xs text-red-400">{req.rejectionReason}</p>
+                    <React.Fragment key={req.id}>
+                      <tr className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${req.status === 'Verification Pending' ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}`}>
+                        <td className="table-cell">
+                          <p className="font-medium text-sm text-gray-900 dark:text-white">{req.studentName}</p>
+                          <p className="text-xs text-gray-400">{formatDate(req.submittedAt)}</p>
+                        </td>
+                        <td className="table-cell hidden sm:table-cell text-sm text-gray-500">{req.className}</td>
+                        <td className="table-cell">
+                          {req.isGrouped ? (
+                            <div>
+                              <button
+                                onClick={() => toggleExpanded(req.id)}
+                                className="flex items-center gap-2 text-left hover:text-blue-600 transition-colors"
+                              >
+                                {expandedRows.has(req.id) ? (
+                                  <HiChevronUp className="w-4 h-4 flex-shrink-0" />
+                                ) : (
+                                  <HiChevronDown className="w-4 h-4 flex-shrink-0" />
+                                )}
+                                <div>
+                                  <p className="font-medium text-sm text-gray-900 dark:text-white">
+                                    {req.groupedRequests.length} months combined
+                                  </p>
+                                  <p className="text-xs text-blue-500 mt-0.5">Click to {expandedRows.has(req.id) ? 'collapse' : 'expand'}</p>
+                                </div>
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="font-medium text-sm text-gray-900 dark:text-white">{req.billingPeriod}</p>
                           )}
-                          {req.status === 'Paid' && req.verifiedBy && (
-                            <p className="text-xs text-gray-400">By {req.verifiedBy}</p>
-                          )}
-                        </div>
-                      </td>
-                      <td className="table-cell">
-                        {req.status === 'Verification Pending' && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleApprove(req)}
-                              disabled={approving === req.id}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
-                            >
-                              {approving === req.id ? <LoadingSpinner size="sm" /> : '✓'} Approve
-                            </button>
-                            <button
-                              onClick={() => setRejectTarget(req)}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
-                            >
-                              ✕ Decline
-                            </button>
+                        </td>
+                        <td className="table-cell hidden md:table-cell"><span className="badge-info">{req.paymentType}</span></td>
+                        <td className="table-cell text-sm">{formatCurrency(req.baseAmount)}</td>
+                        <td className="table-cell hidden lg:table-cell">
+                          {req.lateFee > 0 ? <span className="text-red-500 text-sm">{formatCurrency(req.lateFee)}</span> : <span className="text-gray-400">—</span>}
+                        </td>
+                        <td className="table-cell font-bold text-sm">{formatCurrency(req.totalAmount)}</td>
+                        <td className="table-cell hidden md:table-cell text-xs font-mono text-gray-600 dark:text-gray-400">{req.referenceId}</td>
+                        <td className="table-cell hidden lg:table-cell text-sm text-gray-500">{req.paymentDate || '—'}</td>
+                        <td className="table-cell">
+                          <div className="space-y-1">
+                            <StatusBadge status={req.status} />
+                            {req.status === 'Rejected' && req.rejectionReason && (
+                              <p className="text-xs text-red-400">{req.rejectionReason}</p>
+                            )}
+                            {req.status === 'Paid' && req.verifiedBy && (
+                              <p className="text-xs text-gray-400">By {req.verifiedBy}</p>
+                            )}
                           </div>
-                        )}
-                        {req.status !== 'Verification Pending' && <span className="text-gray-300 text-xs">—</span>}
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="table-cell">
+                          {req.status === 'Verification Pending' && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleApprove(req)}
+                                disabled={approving === req.id}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
+                              >
+                                {approving === req.id ? <LoadingSpinner size="sm" /> : '✓'} Approve
+                              </button>
+                              <button
+                                onClick={() => setRejectTarget(req)}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
+                          )}
+                          {req.status !== 'Verification Pending' && <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                      </tr>
+                      {/* Expanded view for grouped requests */}
+                      {req.isGrouped && expandedRows.has(req.id) && (
+                        <tr className="bg-blue-50/30 dark:bg-blue-900/10">
+                          <td colSpan={11} className="p-0">
+                            <div className="px-4 py-3">
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Individual Months:</p>
+                              <div className="space-y-2">
+                                {req.groupedRequests.map((subReq, idx) => (
+                                  <div key={subReq.id} className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <div className="flex items-center gap-4">
+                                      <span className="text-xs font-bold text-gray-400 w-6">#{idx + 1}</span>
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-900 dark:text-white">{subReq.billingPeriod}</p>
+                                        <p className="text-xs text-gray-500">Period Key: {subReq.periodKey}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-6">
+                                      <div className="text-right">
+                                        <p className="text-xs text-gray-500">Base Fee</p>
+                                        <p className="text-sm font-medium text-gray-900 dark:text-white">{formatCurrency(subReq.baseAmount)}</p>
+                                      </div>
+                                      {subReq.lateFee > 0 && (
+                                        <div className="text-right">
+                                          <p className="text-xs text-gray-500">Late Fee</p>
+                                          <p className="text-sm font-medium text-red-500">{formatCurrency(subReq.lateFee)}</p>
+                                        </div>
+                                      )}
+                                      <div className="text-right">
+                                        <p className="text-xs text-gray-500">Total</p>
+                                        <p className="text-sm font-bold text-gray-900 dark:text-white">{formatCurrency(subReq.totalAmount)}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
