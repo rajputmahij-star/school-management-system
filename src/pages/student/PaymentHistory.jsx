@@ -35,6 +35,58 @@ export default function PaymentHistory() {
     } finally { setLoading(false) }
   }
 
+  // Group requests by reference ID and payment type (for quarterly/half-yearly/yearly payments)
+  const groupedRequests = React.useMemo(() => {
+    const grouped = []
+    const processed = new Set()
+
+    requests.forEach((req) => {
+      if (processed.has(req.id)) return
+
+      // For quarterly/half-yearly/yearly payments with same reference ID, group them
+      if (req.paymentType && ['Quarterly', 'Half-Yearly', 'Yearly'].includes(req.paymentType) && req.referenceId) {
+        // Find all requests with same student, reference ID, payment type, and status
+        const relatedRequests = requests.filter((r) => 
+          r.studentId === req.studentId &&
+          r.referenceId === req.referenceId &&
+          r.paymentType === req.paymentType &&
+          r.status === req.status
+        )
+
+        if (relatedRequests.length > 1) {
+          // Create a grouped entry
+          const totalBase = relatedRequests.reduce((sum, r) => sum + (r.baseAmount || 0), 0)
+          const totalLateFee = relatedRequests.reduce((sum, r) => sum + (r.lateFee || 0), 0)
+          const totalAmount = relatedRequests.reduce((sum, r) => sum + (r.totalAmount || 0), 0)
+          const periods = relatedRequests.map(r => r.billingPeriod).join(', ')
+
+          grouped.push({
+            ...req,
+            id: req.id,
+            billingPeriod: `${relatedRequests.length} months`,
+            periodDetails: periods, // Store full period list
+            baseAmount: totalBase,
+            lateFee: totalLateFee,
+            totalAmount: totalAmount,
+            isGrouped: true,
+            monthCount: relatedRequests.length
+          })
+
+          // Mark all related requests as processed
+          relatedRequests.forEach(r => processed.add(r.id))
+        } else {
+          grouped.push(req)
+          processed.add(req.id)
+        }
+      } else {
+        grouped.push(req)
+        processed.add(req.id)
+      }
+    })
+
+    return grouped
+  }, [requests])
+
   if (loading) return <div className="flex justify-center p-12"><LoadingSpinner size="lg" /></div>
 
   return (
@@ -62,7 +114,7 @@ export default function PaymentHistory() {
 
       {/* Records */}
       <div className="card overflow-hidden">
-        {requests.length === 0 ? (
+        {groupedRequests.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 text-gray-400">
             <HiReceiptTax className="w-12 h-12 mb-3 opacity-30" />
             <p>No payment submissions yet</p>
@@ -86,12 +138,17 @@ export default function PaymentHistory() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {requests.map((r) => (
+                {groupedRequests.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                     <td className="table-cell text-sm text-gray-500">{formatDate(r.submittedAt)}</td>
                     <td className="table-cell">
                       <p className="font-medium text-sm text-gray-900 dark:text-white">{r.billingPeriod}</p>
-                      {r.periodKey && <p className="text-xs text-gray-400 font-mono">{r.periodKey}</p>}
+                      {r.isGrouped && r.periodDetails && (
+                        <p className="text-xs text-blue-500 mt-0.5" title={r.periodDetails}>
+                          {r.paymentType} payment
+                        </p>
+                      )}
+                      {!r.isGrouped && r.periodKey && <p className="text-xs text-gray-400 font-mono">{r.periodKey}</p>}
                     </td>
                     <td className="table-cell hidden sm:table-cell">
                       <span className="badge-info">{r.paymentType}</span>
