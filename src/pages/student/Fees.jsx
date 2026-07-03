@@ -571,7 +571,7 @@ export default function StudentFees() {
           <HiExclamation className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-              {unpaidCount} outstanding payment{unpaidCount > 1 ? 's' : ''} — {formatCurrency(totalDue)} due
+              {unpaidCount} pending payment{unpaidCount > 1 ? 's' : ''} — {formatCurrency(totalDue)} due
             </p>
             <p className="text-xs text-red-500 dark:text-red-500 mt-0.5">
               Please clear pending dues to avoid late fees.
