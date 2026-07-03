@@ -8,7 +8,7 @@ import {
 } from '../../firebase/firestore'
 import {
   formatDate, formatCurrency,
-  calculateSalaryFromAttendance, getWorkingDaysInMonth,
+  calculateSalaryFromAttendance,
 } from '../../utils/helpers'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import toast from 'react-hot-toast'
@@ -126,20 +126,15 @@ export default function EmployeeAttendancePage() {
   }), [employees, attendance])
 
   // ── Monthly summary rows ─────────────────────────────────────────────────────
-  // Build per-employee summary from monthRecords, excluding Sundays automatically.
+  // Working days = total calendar days in the month (not Mon-Sat only)
   const monthlySummary = useMemo(() => {
-    const workingDays = getWorkingDaysInMonth(summaryMonth, summaryYear)
+    const totalDaysInMonth = new Date(summaryYear, summaryMonth, 0).getDate()
     return employees.map((emp) => {
       const empRecs = monthRecords.filter((r) => r.employeeId === emp.id)
-      // Exclude Sunday records just in case any slipped in
-      const validRecs = empRecs.filter((r) => {
-        const d = r.date?.toDate ? r.date.toDate() : new Date(r.dateStr + 'T00:00:00')
-        return d.getDay() !== 0
-      })
-      const presentDays  = validRecs.filter((r) => r.attendanceType === 'Present').length
-      const absentDays   = validRecs.filter((r) => r.attendanceType === 'Absent').length
-      const halfDays     = validRecs.filter((r) => r.attendanceType === 'Half Day').length
-      const leaveDays    = validRecs.filter((r) => r.attendanceType === 'Leave').length
+      const presentDays  = empRecs.filter((r) => r.attendanceType === 'Present').length
+      const absentDays   = empRecs.filter((r) => r.attendanceType === 'Absent').length
+      const halfDays     = empRecs.filter((r) => r.attendanceType === 'Half Day').length
+      const leaveDays    = empRecs.filter((r) => r.attendanceType === 'Leave').length
 
       const { perDaySalary, salaryEarned, attendancePct } = calculateSalaryFromAttendance(
         emp.monthlySalary, summaryMonth, summaryYear, presentDays, halfDays
@@ -150,7 +145,7 @@ export default function EmployeeAttendancePage() {
         employeeName: emp.employeeName,
         designation:  emp.designation,
         monthlySalary: emp.monthlySalary,
-        workingDays,
+        totalDaysInMonth,
         presentDays,
         absentDays,
         halfDays,
@@ -305,28 +300,15 @@ export default function EmployeeAttendancePage() {
           <div className="card p-4 flex flex-wrap gap-4 items-end">
             <div>
               <label className="label">Month</label>
-              <select
-                value={summaryMonth}
-                onChange={(e) => setSummaryMonth(Number(e.target.value))}
-                className="input-field w-40"
-              >
-                {MONTHS.map((m, i) => (
-                  <option key={m} value={i + 1}>{m}</option>
-                ))}
+              <select value={summaryMonth} onChange={(e) => setSummaryMonth(Number(e.target.value))} className="input-field w-40">
+                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
               </select>
             </div>
             <div>
               <label className="label">Year</label>
-              <select
-                value={summaryYear}
-                onChange={(e) => setSummaryYear(Number(e.target.value))}
-                className="input-field w-28"
-              >
+              <select value={summaryYear} onChange={(e) => setSummaryYear(Number(e.target.value))} className="input-field w-28">
                 {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
-            </div>
-            <div className="text-sm text-gray-500 pb-2">
-              Working days (Mon–Sat): <strong className="text-gray-900 dark:text-white">{getWorkingDaysInMonth(summaryMonth, summaryYear)}</strong>
             </div>
           </div>
 
@@ -341,7 +323,6 @@ export default function EmployeeAttendancePage() {
                     <tr className="border-b border-gray-200 dark:border-gray-800">
                       <th className="table-header">Employee</th>
                       <th className="table-header">Designation</th>
-                      <th className="table-header text-center">Working Days</th>
                       <th className="table-header text-center">Present</th>
                       <th className="table-header text-center">Absent</th>
                       <th className="table-header text-center hidden sm:table-cell">Half Day</th>
@@ -352,7 +333,7 @@ export default function EmployeeAttendancePage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                     {monthlySummary.length === 0 ? (
-                      <tr><td colSpan={9} className="table-cell text-center text-gray-400 py-12">No active employees</td></tr>
+                      <tr><td colSpan={8} className="table-cell text-center text-gray-400 py-12">No active employees</td></tr>
                     ) : monthlySummary.map((row) => (
                       <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                         <td className="table-cell">
@@ -360,7 +341,6 @@ export default function EmployeeAttendancePage() {
                           <p className="text-xs text-gray-400">{formatCurrency(row.monthlySalary)}/mo</p>
                         </td>
                         <td className="table-cell"><span className="badge-info">{row.designation}</span></td>
-                        <td className="table-cell text-center font-medium">{row.workingDays}</td>
                         <td className="table-cell text-center">
                           <span className="text-green-600 dark:text-green-400 font-semibold">{row.presentDays}</span>
                         </td>
@@ -376,10 +356,8 @@ export default function EmployeeAttendancePage() {
                         <td className="table-cell text-center hidden md:table-cell">
                           <div className="flex items-center justify-center gap-1.5">
                             <div className="w-16 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                              <div
-                                className={`h-1.5 rounded-full ${row.attendancePct >= 80 ? 'bg-green-500' : row.attendancePct >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                                style={{ width: `${row.attendancePct}%` }}
-                              />
+                              <div className={`h-1.5 rounded-full ${row.attendancePct >= 80 ? 'bg-green-500' : row.attendancePct >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                style={{ width: `${row.attendancePct}%` }} />
                             </div>
                             <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{row.attendancePct}%</span>
                           </div>
@@ -394,7 +372,7 @@ export default function EmployeeAttendancePage() {
                   {monthlySummary.length > 0 && (
                     <tfoot>
                       <tr className="border-t-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                        <td colSpan={8} className="table-cell font-semibold text-gray-700 dark:text-gray-300 text-right pr-4">
+                        <td colSpan={7} className="table-cell font-semibold text-gray-700 dark:text-gray-300 text-right pr-4">
                           Total Salary ({MONTHS[summaryMonth - 1]} {summaryYear}):
                         </td>
                         <td className="table-cell text-right font-bold text-base sm:text-lg text-gray-900 dark:text-white">

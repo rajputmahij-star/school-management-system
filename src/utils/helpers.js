@@ -48,6 +48,21 @@ export const NIOS_SUBGROUPS = ['OBE-A', 'OBE-B', 'OBE-C', 'Secondary', 'Sr.Secon
 /** Returns true if the given class name is NIOS Group */
 export const isNiosGroup = (className) => className === 'NIOS Group'
 
+// ─── Default form options (used as fallback when not customised in Settings) ──
+export const DEFAULT_FORM_OPTIONS = {
+  classes:          [...SCHOOL_CLASSES],
+  niosSubGroups:    [...NIOS_SUBGROUPS],
+  genders:          ['Male', 'Female', 'Other'],
+  transportOptions: [
+    'School Bus', 'Van', 'Auto Rickshaw', 'Bicycle',
+    'Walking', 'Parent Drop/Pickup', 'Private Vehicle', 'Other',
+  ],
+  designations: [
+    'Principal', 'Co-ordinator', 'Special Educator', 'Educator',
+    'Assistant Educator', 'Helper', 'Office Assistant', 'Intern', 'Driver', 'Guard',
+  ],
+}
+
 // ─── Late Fee Calculator ──────────────────────────────────────────────────────
 /**
  * Payment window: 5th–10th of every month → no fine.

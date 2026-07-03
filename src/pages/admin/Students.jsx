@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle } from 'react-icons/hi'
-import { getStudents, getFeeRules, getCustomFields, setDocument, deleteDocument } from '../../firebase/firestore'
+import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument } from '../../firebase/firestore'
 import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
@@ -15,12 +15,12 @@ import toast from 'react-hot-toast'
 import { Timestamp, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase/config'
 
-import { SCHOOL_CLASSES, NIOS_SUBGROUPS, isNiosGroup } from '../../utils/helpers'
+import { SCHOOL_CLASSES, NIOS_SUBGROUPS, isNiosGroup, DEFAULT_FORM_OPTIONS } from '../../utils/helpers'
 
 const CLASSES = SCHOOL_CLASSES
 
 const TRANSPORT_OPTIONS = [
-  'School Bus', 'Van', 'Auto Rickshaw', 'Bicycle', 'Walking',
+   'Van', 'Auto Rickshaw', 'Bicycle', 'Walking',
   'Parent Drop/Pickup', 'Private Vehicle', 'Other',
 ]
 
@@ -79,6 +79,7 @@ export default function Students() {
   const [students, setStudents]   = useState([])
   const [feeRules, setFeeRules]   = useState([])
   const [customFields, setCustomFields] = useState([])
+  const [formOptions, setFormOptions]   = useState(DEFAULT_FORM_OPTIONS)
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [filter, setFilter]       = useState('all')
@@ -103,10 +104,11 @@ export default function Students() {
   const load = async () => {
     try {
       setLoading(true)
-      const [s, r, cf] = await Promise.all([getStudents(), getFeeRules(), getCustomFields()])
+      const [s, r, cf, fo] = await Promise.all([getStudents(), getFeeRules(), getCustomFields(), getFormOptions()])
       setStudents(s)
       setFeeRules(r)
       setCustomFields(cf?.studentFields || [])
+      if (fo) setFormOptions({ ...DEFAULT_FORM_OPTIONS, ...fo })
     } catch (err) {
       toast.error(`Failed to load students: ${err.message}`)
     } finally { setLoading(false) }
@@ -219,7 +221,9 @@ export default function Students() {
         leaveDate:     form.leaveDate    ? Timestamp.fromDate(new Date(form.leaveDate))    : null,
         modeOfTransport: form.modeOfTransport || '',
         customDueDate: form.customDueDate ? Number(form.customDueDate) : null,
-        feeAmount:    form.feeAmount    ? Number(form.feeAmount)    : 0,
+        feeAmount:    form.feeAmount    ? Number(form.feeAmount)
+                    : (editData && editData.feeAmount > 0) ? editData.feeAmount   // preserve existing fee on update
+                    : 0,
         academicYear: form.admissionDate ? getAcademicYear(form.admissionDate) : null,
         admissionFee: form.admissionFee ? Number(form.admissionFee) : 0,
         depositFee:   form.depositFee   ? Number(form.depositFee)   : 0,
@@ -485,7 +489,7 @@ export default function Students() {
               <TF label="Student ID"           value={form.studentId}     onChange={h('studentId')}     req />
               <TF label="Student Name"         value={form.studentName}   onChange={h('studentName')}   req />
               <TF label="Date of Birth"        type="date" value={form.dob} onChange={h('dob')} />
-              <SF label="Gender"               value={form.gender}        onChange={h('gender')}        options={['Male','Female','Other']} />
+              <SF label="Gender"               value={form.gender}        onChange={h('gender')}        options={formOptions.genders || DEFAULT_FORM_OPTIONS.genders} />
               <TF label="Nationality"          value={form.nationality}   onChange={h('nationality')}   placeholder="e.g. Indian" />
               <TF label="Place of Birth"       value={form.placeOfBirth}  onChange={h('placeOfBirth')}  placeholder="City / Town" />
               <TF label="Religion"             value={form.religion}      onChange={h('religion')}      placeholder="e.g. Hindu" />
@@ -501,7 +505,7 @@ export default function Students() {
                   placeholder="12-digit Aadhar number"
                 />
               </div>
-              <SF label="Class"                value={form.className}     onChange={h('className')}     options={CLASSES} req />
+              <SF label="Class"                value={form.className}     onChange={h('className')}     options={formOptions.classes || DEFAULT_FORM_OPTIONS.classes} req />
               {/* NIOS Group: sub-group + custom fee */}
               {isNiosGroup(form.className) && (
                 <>
@@ -514,7 +518,7 @@ export default function Students() {
                       required
                     >
                       <option value="">Select Sub-Group</option>
-                      {NIOS_SUBGROUPS.map((sg) => <option key={sg} value={sg}>{sg}</option>)}
+                      {(formOptions.niosSubGroups || DEFAULT_FORM_OPTIONS.niosSubGroups).map((sg) => <option key={sg} value={sg}>{sg}</option>)}
                     </select>
                   </div>
                   <div>
@@ -539,7 +543,7 @@ export default function Students() {
               <TF label="Date of Admission"  type="date" value={form.admissionDate} onChange={h('admissionDate')} />
               <TF label="Case History Date"  type="date" value={form.caseHistoryDate} onChange={h('caseHistoryDate')} />
               <TF label="Leave Date (if left)" type="date" value={form.leaveDate}     onChange={h('leaveDate')} />
-              <SF label="Mode of Transport"    value={form.modeOfTransport} onChange={h('modeOfTransport')} options={TRANSPORT_OPTIONS} />
+              <SF label="Mode of Transport"    value={form.modeOfTransport} onChange={h('modeOfTransport')} options={formOptions.transportOptions || DEFAULT_FORM_OPTIONS.transportOptions} />
 
               {/* ── Auto-calculated fee banner (not shown for NIOS Group) ── */}
               {!isNiosGroup(form.className) && (

@@ -3,7 +3,7 @@ import {
   HiPlus, HiSearch, HiPencil, HiTrash, HiEye,
   HiDownload, HiKey, HiUserRemove, HiUserAdd,
 } from 'react-icons/hi'
-import { getEmployees, getCustomFields, setDocument, deleteDocument } from '../../firebase/firestore'
+import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument } from '../../firebase/firestore'
 import {
   createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
   deactivateEmployee, activateEmployee, adminSetPassword,
@@ -20,7 +20,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import toast from 'react-hot-toast'
 import { Timestamp } from 'firebase/firestore'
 
-import { SCHOOL_CLASSES } from '../../utils/helpers'
+import { SCHOOL_CLASSES, DEFAULT_FORM_OPTIONS } from '../../utils/helpers'
 
 const DESIGNATIONS = [
   'Principal',
@@ -63,6 +63,7 @@ const SelectField = ({ label, value, onChange, options, required }) => (
 export default function Employees() {
   const [employees, setEmployees] = useState([])
   const [customFields, setCustomFields] = useState([])
+  const [formOptions, setFormOptions]   = useState(DEFAULT_FORM_OPTIONS)
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [filter, setFilter]       = useState('all')   // all | active | left
@@ -99,9 +100,10 @@ export default function Employees() {
   const load = async () => {
     try {
       setLoading(true)
-      const [emps, cf] = await Promise.all([getEmployees(), getCustomFields()])
+      const [emps, cf, fo] = await Promise.all([getEmployees(), getCustomFields(), getFormOptions()])
       setEmployees(emps)
       setCustomFields(cf?.employeeFields || [])
+      if (fo) setFormOptions({ ...DEFAULT_FORM_OPTIONS, ...fo })
     } catch (err) {
       toast.error(`Failed to load employees: ${err.message}`)
     } finally { setLoading(false) }
@@ -438,7 +440,7 @@ export default function Employees() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <TextField label="Employee ID"          type="text"   value={form.employeeId}    onChange={handleEmployeeId}    required />
             <TextField label="Employee Name"        type="text"   value={form.employeeName}  onChange={handleEmployeeName}  required />
-            <SelectField label="Designation"                      value={form.designation}   onChange={handleDesignation}   options={DESIGNATIONS} required />
+            <SelectField label="Designation"                      value={form.designation}   onChange={handleDesignation}   options={formOptions.designations || DEFAULT_FORM_OPTIONS.designations} required />
             <TextField label="Joining Date"         type="date"   value={form.joiningDate}   onChange={handleJoiningDate} />
             <TextField label="Monthly Salary (Rs.)" type="number" value={form.monthlySalary} onChange={handleMonthlySalary} />
             <TextField label="PAN Card Number"      type="text"   value={form.panNumber}     onChange={handlePanNumber}    placeholder="e.g. ABCDE1234F" />

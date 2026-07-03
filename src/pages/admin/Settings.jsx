@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { HiSave, HiCog, HiCurrencyRupee, HiCalendar, HiPlus, HiTrash, HiPencil, HiX, HiCheck } from 'react-icons/hi'
-import { getSettings, updateSettings, getFeeSettings, updateFeeSettings, getCustomFields, updateCustomFields } from '../../firebase/firestore'
+import { getSettings, updateSettings, getFeeSettings, updateFeeSettings, getCustomFields, updateCustomFields, getFormOptions, updateFormOptions } from '../../firebase/firestore'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import ChangePasswordForm from '../../components/ui/ChangePasswordForm'
 import toast from 'react-hot-toast'
+import { DEFAULT_FORM_OPTIONS } from '../../utils/helpers'
 
 const SF = ({ label, type = 'text', value, onChange, note }) => (
   <div>
@@ -181,6 +182,64 @@ function FieldRow({ field, isEditing, onEdit, onDelete, onSaveEdit, onCancelEdit
   )
 }
 
+// ── Form Options Manager — lets admin edit dropdown values for Student/Employee forms ──
+function OptionsListEditor({ label, items, onChange }) {
+  const [draft, setDraft] = useState([...items])
+  const [newItem, setNewItem] = useState('')
+
+  useEffect(() => { setDraft([...items]) }, [items])
+
+  const add = () => {
+    const v = newItem.trim()
+    if (!v) return
+    if (draft.includes(v)) { toast.error(`"${v}" already exists`); return }
+    const updated = [...draft, v]
+    setDraft(updated)
+    onChange(updated)
+    setNewItem('')
+  }
+
+  const remove = (i) => {
+    const updated = draft.filter((_, idx) => idx !== i)
+    setDraft(updated)
+    onChange(updated)
+  }
+
+  const moveUp = (i) => {
+    if (i === 0) return
+    const updated = [...draft]
+    ;[updated[i - 1], updated[i]] = [updated[i], updated[i - 1]]
+    setDraft(updated)
+    onChange(updated)
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {draft.map((item, i) => (
+          <span key={item + i}
+            className="flex items-center gap-1 pl-3 pr-1 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-sm text-gray-800 dark:text-gray-200">
+            {item}
+            <button onClick={() => remove(i)}
+              className="w-5 h-5 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full text-gray-400 hover:text-red-500 transition-colors">
+              <HiX className="w-3 h-3" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), add())}
+          className="input-field flex-1 text-sm" placeholder={`Add new ${label.toLowerCase()} option…`} />
+        <button onClick={add} className="btn-primary text-sm px-3 py-2">
+          <HiPlus className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const [settings, setSettings] = useState({
     schoolName: 'Anand Special School', address: '', phone: '', email: '',
@@ -195,6 +254,8 @@ export default function Settings() {
     yearlyLateFeeEnabled:   false,
   })
   const [customFieldsDoc, setCustomFieldsDoc] = useState({ studentFields: [], employeeFields: [] })
+  const [formOptions, setFormOptions] = useState(DEFAULT_FORM_OPTIONS)
+  const [savingOptions, setSavingOptions] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving,  setSaving]  = useState(false)
   const [savingFee, setSavingFee] = useState(false)
@@ -221,12 +282,22 @@ export default function Settings() {
 
   const loadAll = async () => {
     try {
-      const [s, f, cf] = await Promise.all([getSettings(), getFeeSettings(), getCustomFields()])
+      const [s, f, cf, fo] = await Promise.all([getSettings(), getFeeSettings(), getCustomFields(), getFormOptions()])
       if (s) setSettings(s)
       if (f) setFeeSettings(f)
       if (cf) setCustomFieldsDoc({ studentFields: cf.studentFields || [], employeeFields: cf.employeeFields || [] })
+      if (fo) setFormOptions({ ...DEFAULT_FORM_OPTIONS, ...fo })
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
+  }
+
+  const handleSaveFormOptions = async () => {
+    setSavingOptions(true)
+    try {
+      await updateFormOptions(formOptions)
+      toast.success('Form options saved')
+    } catch { toast.error('Failed to save form options') }
+    finally { setSavingOptions(false) }
   }
 
   const saveStudentCustomFields = async (fields) => {
@@ -394,6 +465,51 @@ export default function Settings() {
           fields={customFieldsDoc.employeeFields}
           onSave={saveEmployeeCustomFields}
         />
+      </div>
+
+      {/* Form Options — editable dropdowns */}
+      <div className="card p-4 sm:p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <HiCog className="w-5 h-5 text-primary-600" />
+            <h2 className="font-semibold text-gray-900 dark:text-white">Form Dropdown Options</h2>
+          </div>
+          <button onClick={handleSaveFormOptions} disabled={savingOptions} className="btn-primary text-sm">
+            {savingOptions ? <LoadingSpinner size="sm" /> : <HiSave className="w-4 h-4" />}
+            Save Options
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mb-5">
+          Edit the dropdown options that appear in Add/Edit Student and Employee forms.
+          Add new options, remove existing ones. Changes apply immediately after saving.
+        </p>
+        <div className="space-y-6 divide-y divide-gray-100 dark:divide-gray-800">
+          <div className="pt-2">
+            <OptionsListEditor label="Student Classes"
+              items={formOptions.classes || []}
+              onChange={(v) => setFormOptions((p) => ({ ...p, classes: v }))} />
+          </div>
+          <div className="pt-4">
+            <OptionsListEditor label="NIOS Sub-Groups"
+              items={formOptions.niosSubGroups || []}
+              onChange={(v) => setFormOptions((p) => ({ ...p, niosSubGroups: v }))} />
+          </div>
+          <div className="pt-4">
+            <OptionsListEditor label="Gender Options"
+              items={formOptions.genders || []}
+              onChange={(v) => setFormOptions((p) => ({ ...p, genders: v }))} />
+          </div>
+          <div className="pt-4">
+            <OptionsListEditor label="Mode of Transport"
+              items={formOptions.transportOptions || []}
+              onChange={(v) => setFormOptions((p) => ({ ...p, transportOptions: v }))} />
+          </div>
+          <div className="pt-4">
+            <OptionsListEditor label="Employee Designations"
+              items={formOptions.designations || []}
+              onChange={(v) => setFormOptions((p) => ({ ...p, designations: v }))} />
+          </div>
+        </div>
       </div>
 
       <ChangePasswordForm />

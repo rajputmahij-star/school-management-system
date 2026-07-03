@@ -380,6 +380,18 @@ export const updateCustomFields = async (data) => {
   return setDocument('settings', 'custom_fields', data)
 }
 
+// ─── Form Options (editable dropdowns for Student/Employee forms) ─────────────
+// Stored under settings/form_options
+// Shape: { designations: [...], classes: [...], transportOptions: [...], genders: [...], niosSubGroups: [...] }
+
+export const getFormOptions = async () => {
+  return getDocument('settings', 'form_options')
+}
+
+export const updateFormOptions = async (data) => {
+  return setDocument('settings', 'form_options', data)
+}
+
 // ─── Leave Requests (Employee) ────────────────────────────────────────────────
 // Collection: leave_requests
 // Fields: employeeId, employeeName, designation, fromDate, toDate, reason,
