@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { HiSave, HiCog, HiCurrencyRupee, HiCalendar, HiPlus, HiTrash, HiPencil, HiX, HiCheck, HiUserAdd, HiShieldCheck } from 'react-icons/hi'
 import { getSettings, updateSettings, getFeeSettings, updateFeeSettings, getCustomFields, updateCustomFields, getFormOptions, updateFormOptions } from '../../firebase/firestore'
-import { createUserWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp, getDocs, collection, deleteDoc } from 'firebase/firestore'
-import { auth, db } from '../../firebase/config'
 import { initializeApp, getApps } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
+import { getAuth, createUserWithEmailAndPassword, signOut as authSignOut } from 'firebase/auth'
+import { db } from '../../firebase/config'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import ChangePasswordForm from '../../components/ui/ChangePasswordForm'
 import toast from 'react-hot-toast'
@@ -526,7 +525,7 @@ export default function Settings() {
 }
 
 // ── Secondary Firebase app for creating admins without signing out ─────────────
-const firebaseConfig = {
+const _cfg = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY            || 'AIzaSyAAUFv1VjQglrKtNIErIEo6udoJ9TYWzbo',
   authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN        || 'anand-school-bca42.firebaseapp.com',
   projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID         || 'anand-school-bca42',
@@ -534,8 +533,194 @@ const firebaseConfig = {
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '535898177762',
   appId:             import.meta.env.VITE_FIREBASE_APP_ID             || '1:535898177762:web:4fd931e574eee039bc9ebb',
 }
-const secondaryApp  = getApps().find((a) => a.name === 'secondary') || initializeApp(firebaseConfig, 'secondary')
-const secondaryAuth = getAuth(secondaryApp)
+
+function getSecondaryAuth() {
+  const existing = getApps().find((a) => a.name === 'secondary')
+  const app = existing || initializeApp(_cfg, 'secondary')
+  return getAuth(app)
+}
+
+function AdminAccountsSection() {
+  const [admins,   setAdmins]   = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [saving,   setSaving]   = useState(false)
+  const [deleting, setDeleting] = useState(null)
+  const [form, setForm] = useState({ name: '', email: '', password: '' })
+  const [showPw,   setShowPw]   = useState(false)
+
+  useEffect(() => { loadAdmins() }, [])
+
+  const loadAdmins = async () => {
+    setLoading(true)
+    try {
+      const snap = await getDocs(collection(db, 'admins'))
+      setAdmins(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    } catch (err) {
+      console.error('loadAdmins error:', err)
+      toast.error('Failed to load admins: ' + err.message)
+    } finally { setLoading(false) }
+  }
+
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    if (!form.name.trim())        { toast.error('Name is required'); return }
+    if (!form.email.trim())       { toast.error('Email is required'); return }
+    if (form.password.length < 6) { toast.error('Password must be at least 6 characters'); return }
+    setSaving(true)
+    try {
+      // Use a fresh secondary auth instance each time
+      const secAuth = getSecondaryAuth()
+
+      // Step 1 — Create the Firebase Auth user on secondary app
+      const cred = await createUserWithEmailAndPassword(secAuth, form.email.trim(), form.password)
+      const uid  = cred.user.uid
+
+      // Step 2 — Sign out of secondary app immediately so main session is unaffected
+      await authSignOut(secAuth)
+
+      // Step 3 — Write the admin document to Firestore
+      await setDoc(doc(db, 'admins', uid), {
+        adminName: form.name.trim(),
+        email:     form.email.trim(),
+        role:      'admin',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+
+      toast.success(`Admin "${form.name.trim()}" added successfully!`)
+      setForm({ name: '', email: '', password: '' })
+      setShowPw(false)
+      loadAdmins()
+    } catch (err) {
+      console.error('handleAdd error:', err)
+      // Give a human-readable message for common errors
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error('This email is already registered. Use a different email.')
+      } else if (err.code === 'auth/invalid-email') {
+        toast.error('Invalid email address format.')
+      } else if (err.code === 'permission-denied') {
+        toast.error('Firestore permission denied. Make sure you are logged in as admin.')
+      } else {
+        toast.error(err.message || 'Failed to add admin')
+      }
+    } finally { setSaving(false) }
+  }
+
+  const handleDelete = async (admin) => {
+    if (admins.length <= 1) { toast.error('Cannot delete the only admin account'); return }
+    if (!window.confirm(`Remove admin "${admin.adminName}"? They will lose admin access.`)) return
+    setDeleting(admin.id)
+    try {
+      await deleteDoc(doc(db, 'admins', admin.id))
+      toast.success(`Admin "${admin.adminName}" removed`)
+      loadAdmins()
+    } catch (err) {
+      toast.error(err.message)
+    } finally { setDeleting(null) }
+  }
+
+  return (
+    <div className="card p-6 space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+          <HiShieldCheck className="w-4 h-4 text-indigo-600" />
+        </div>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Admin Accounts</h2>
+      </div>
+
+      {/* Current admins list */}
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-gray-400"><LoadingSpinner size="sm" /> Loading admins…</div>
+      ) : admins.length === 0 ? (
+        <p className="text-sm text-gray-400">No admins found.</p>
+      ) : (
+        <div className="space-y-2">
+          {admins.map((admin) => (
+            <div key={admin.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-xs font-bold text-indigo-600">
+                  {admin.adminName?.[0]?.toUpperCase() || 'A'}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{admin.adminName}</p>
+                  <p className="text-xs text-gray-500">{admin.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleDelete(admin)}
+                disabled={deleting === admin.id || admins.length <= 1}
+                className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg disabled:opacity-40 transition-colors"
+                title={admins.length <= 1 ? 'Cannot delete the only admin' : 'Remove admin'}
+              >
+                {deleting === admin.id ? <LoadingSpinner size="sm" /> : <HiTrash className="w-4 h-4 text-red-500" />}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add new admin form */}
+      <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+        <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+          <HiUserAdd className="w-4 h-4" /> Add New Admin
+        </p>
+        <form onSubmit={handleAdd} className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Full Name <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                placeholder="e.g. Anand Rehabilitation Trust"
+                className="input-field"
+                required
+              />
+            </div>
+            <div>
+              <label className="label">Email Address <span className="text-red-500">*</span></label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                placeholder="e.g. admin@school.com"
+                className="input-field"
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Password <span className="text-red-500">*</span> <span className="text-gray-400 font-normal">(min 6 characters)</span></label>
+            <div className="relative">
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={form.password}
+                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                placeholder="Min 6 characters"
+                className="input-field pr-16"
+                required
+              />
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
+                {showPw ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="btn-primary text-sm"
+          >
+            {saving
+              ? <><LoadingSpinner size="sm" /> Creating admin account…</>
+              : <><HiUserAdd className="w-4 h-4" /> Add Admin</>
+            }
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
 
 function AdminAccountsSection() {
   const [admins,   setAdmins]   = useState([])
@@ -564,7 +749,7 @@ function AdminAccountsSection() {
     try {
       const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email.trim(), form.password)
       const uid  = cred.user.uid
-      await firebaseSignOut(secondaryAuth)
+      await authSignOut(secondaryAuth)
       await setDoc(doc(db, 'admins', uid), {
         adminName: form.name.trim(),
         email:     form.email.trim(),
