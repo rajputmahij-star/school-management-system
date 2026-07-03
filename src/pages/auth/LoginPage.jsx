@@ -30,7 +30,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault()
-    if (!email || !password) { toast.error('Please enter email and password'); return }
+    if (!email || !password) { toast.error('Please enter your email and password'); return }
     setLoading(true)
     try {
       const data = await login(email, password)
@@ -38,7 +38,23 @@ export default function LoginPage() {
       toast.success('Welcome back!')
       navigate(r[data.role])
     } catch (err) {
-      toast.error(err.message || 'Login failed')
+      // Show friendly messages instead of raw Firebase errors
+      const code = err.code || ''
+      if (code === 'auth/user-not-found' || code === 'auth/invalid-email') {
+        toast.error('This email is not registered. Please check and try again.')
+      } else if (code === 'auth/wrong-password') {
+        toast.error('Wrong password. Please try again.')
+      } else if (code === 'auth/invalid-credential') {
+        toast.error('Wrong email or password. Please check and try again.')
+      } else if (code === 'auth/too-many-requests') {
+        toast.error('Too many failed attempts. Please wait a few minutes and try again.')
+      } else if (code === 'auth/user-disabled') {
+        toast.error('This account has been disabled. Please contact admin.')
+      } else if (code === 'auth/network-request-failed') {
+        toast.error('Network error. Please check your internet connection.')
+      } else {
+        toast.error(err.message?.replace('Firebase: ', '').replace(/\s*\(auth\/.*\)\.?/, '') || 'Login failed. Please try again.')
+      }
     } finally { setLoading(false) }
   }
 
@@ -47,16 +63,24 @@ export default function LoginPage() {
     if (!resetEmail.trim()) { toast.error('Enter your registered email address'); return }
     setLoading(true)
     try {
-      await sendPasswordResetEmail(auth, resetEmail.trim())
+      // actionCodeSettings helps email clients recognise this as legitimate
+      const actionCodeSettings = {
+        url: window.location.origin + '/login',
+        handleCodeInApp: false,
+      }
+      await sendPasswordResetEmail(auth, resetEmail.trim(), actionCodeSettings)
       setResetSent(true)
       toast.success('Password reset email sent!')
     } catch (err) {
-      const msg = err.code === 'auth/user-not-found'
-        ? 'No account found with this email address.'
-        : err.code === 'auth/invalid-email'
-          ? 'Invalid email address.'
-          : 'Failed to send reset email. Please try again.'
-      toast.error(msg)
+      if (err.code === 'auth/user-not-found') {
+        toast.error('No account found with this email address.')
+      } else if (err.code === 'auth/invalid-email') {
+        toast.error('Invalid email address. Please check and try again.')
+      } else if (err.code === 'auth/too-many-requests') {
+        toast.error('Too many requests. Please wait a few minutes and try again.')
+      } else {
+        toast.error('Failed to send reset email. Please try again.')
+      }
     } finally { setLoading(false) }
   }
 
@@ -89,7 +113,6 @@ export default function LoginPage() {
               ANAND SPECIAL SCHOOL
             </h1>
             <p className="text-white/70 text-xs mt-0.5">Mngd. By Anand Rehabilitation Trust</p>
-            <p className="text-primary-200 text-xs mt-1">Management System</p>
           </div>
 
           <div className="p-8 bg-white dark:bg-gray-900">
@@ -153,6 +176,7 @@ export default function LoginPage() {
                     <p className="text-sm font-medium text-green-800 dark:text-green-300">Reset email sent!</p>
                     <p className="text-xs text-green-700 dark:text-green-400">
                       Check your inbox at <strong>{resetEmail}</strong> and click the reset link.
+                      If you don't see it, check your <strong>Spam / Junk</strong> folder.
                     </p>
                     <button onClick={() => { setView('login'); setResetSent(false) }}
                       className="text-xs text-primary-600 hover:underline font-medium">
