@@ -73,7 +73,20 @@ export const getStudents = async (forceRefresh = false) => {
   if (!forceRefresh && _studentsCache && (now - _studentsCacheTime) < CACHE_TTL) {
     return _studentsCache
   }
-  const students = await getCollection('students', [orderBy('createdAt', 'desc')])
+  // Try with orderBy first, fall back to unordered if index missing
+  let students
+  try {
+    students = await getCollection('students', [orderBy('createdAt', 'desc')])
+  } catch (err) {
+    // Index not ready or createdAt missing — fetch without ordering and sort client-side
+    console.warn('getStudents: orderBy failed, fetching unordered:', err.message)
+    students = await getCollection('students', [])
+    students.sort((a, b) => {
+      const aT = a.createdAt?.toDate?.() || new Date(a.createdAt || 0)
+      const bT = b.createdAt?.toDate?.() || new Date(b.createdAt || 0)
+      return bT - aT
+    })
+  }
   _studentsCache = students
   _studentsCacheTime = now
   return students

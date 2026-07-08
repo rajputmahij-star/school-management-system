@@ -710,7 +710,7 @@ export default function FeeManagement() {
           { label: 'Advance Paid',    value: stats.advanceCount,     color: 'text-purple-600' },
           { label: 'Pending',         value: stats.pendingCount,     color: 'text-yellow-600' },
           { label: 'Late',            value: stats.lateCount,        color: 'text-red-500' },
-          { label: 'Awaiting Verify', value: pendingRequests.length, color: pendingRequests.length > 0 ? 'text-orange-600' : 'text-gray-400' },
+          { label: 'Awaiting Verify', value: groupedRequests.filter(r => r.status === 'Verification Pending').length, color: groupedRequests.filter(r => r.status === 'Verification Pending').length > 0 ? 'text-orange-600' : 'text-gray-400' },
         ].map(({ label, value, color }) => (
           <div key={label} className="card p-4 text-center">
             <p className={`text-xl font-bold ${color}`}>{value}</p>
@@ -732,9 +732,9 @@ export default function FeeManagement() {
           className={`relative px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === 'requests' ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}
         >
           Payment Verification
-          {pendingRequests.length > 0 && (
+          {groupedRequests.filter(r => r.status === 'Verification Pending').length > 0 && (
             <span className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold">
-              {pendingRequests.length}
+              {groupedRequests.filter(r => r.status === 'Verification Pending').length}
             </span>
           )}
         </button>
