@@ -627,6 +627,10 @@ export default function FeeManagement() {
           receiptNumber,   // Store receipt number
         })
 
+        // Determine the actual amount paid and remaining for this period
+        const actualPaid = request.isPartialPayment ? (request.paidAmount || request.totalAmount) : request.totalAmount
+        const remaining = request.isPartialPayment ? (request.remainingAmount || 0) : 0
+
         // 2. Upsert the fee_ledger entry — creates it if it doesn't exist yet
         await upsertFeeLedgerEntry(request.studentId, request.periodKey, {
           billingType: request.paymentType,
@@ -634,17 +638,45 @@ export default function FeeManagement() {
           fine:        request.lateFee || 0,
           totalPayable: request.totalAmount,
           status:      'Paid',
-          amountPaid:  request.totalAmount,
+          amountPaid:  actualPaid,
           paidAt:      now,
           verifiedBy:  adminName,
           referenceId: request.referenceId,
           paymentDate: request.paymentDate,
           receiptNumber, // Store receipt number in ledger too
+          isPartialPayment: request.isPartialPayment || false,
+          remainingAmount: remaining,
         })
+
+        // 3. If partial payment, add remaining amount to next month's ledger
+        if (request.isPartialPayment && remaining > 0) {
+          // Calculate next month's period key
+          const [year, month] = request.periodKey.split('-')
+          const currentDate = new Date(parseInt(year), parseInt(month) - 1, 1)
+          const nextMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)
+          const nextPeriodKey = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`
+          
+          // Get the student's base fee for calculation
+          const student = students.find(s => (s.uid || s.id) === request.studentId)
+          const baseFee = student ? getEffectiveFee(feeRules, student) : request.baseAmount
+          
+          // Update or create next month's ledger entry with added remaining amount
+          // We add the remaining amount to the base fee of next month
+          await upsertFeeLedgerEntry(request.studentId, nextPeriodKey, {
+            billingType: 'Monthly',
+            baseFee: baseFee + remaining, // Add remaining to next month's base fee
+            fine: 0, // Fine will be calculated when the period becomes due
+            totalPayable: baseFee + remaining,
+            status: 'Pending',
+            carriedFromPreviousMonth: remaining, // Track where this came from
+            previousPeriodKey: request.periodKey,
+          })
+        }
       }
 
       const periodLabel = req.isGrouped ? `${requestsToApprove.length} periods` : req.billingPeriod
-      toast.success(`${req.studentName} — ${periodLabel} approved! Receipt: ${receiptNumber}`)
+      const partialNote = req.isPartialPayment ? ' (Partial Payment)' : ''
+      toast.success(`${req.studentName} — ${periodLabel} approved${partialNote}! Receipt: ${receiptNumber}`)
       loadAll()
     } catch (err) {
       toast.error(err.message)
@@ -813,8 +845,9 @@ export default function FeeManagement() {
                     <th className="table-header hidden sm:table-cell">Class</th>
                     <th className="table-header">Period</th>
                     <th className="table-header hidden md:table-cell">Type</th>
-                    <th className="table-header">Base</th>
-                    <th className="table-header hidden lg:table-cell">Late Fee (if any)</th>
+                    <th className="table-header hidden lg:table-cell">Mode</th>
+                    <th className="table-header">Amount</th>
+                    <th className="table-header hidden lg:table-cell">Late Fee</th>
                     <th className="table-header">Total</th>
                     <th className="table-header hidden md:table-cell">Reference ID</th>
                     <th className="table-header hidden lg:table-cell">Pay Date</th>
@@ -854,15 +887,43 @@ export default function FeeManagement() {
                               </button>
                             </div>
                           ) : (
-                            <p className="font-medium text-sm text-gray-900 dark:text-white">{req.billingPeriod}</p>
+                            <div>
+                              <p className="font-medium text-sm text-gray-900 dark:text-white">{req.billingPeriod}</p>
+                              {req.isPartialPayment && (
+                                <p className="text-xs text-purple-500 mt-0.5">Partial Payment</p>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="table-cell hidden md:table-cell"><span className="badge-info">{req.paymentType}</span></td>
-                        <td className="table-cell text-sm">{formatCurrency(req.baseAmount)}</td>
+                        <td className="table-cell hidden lg:table-cell">
+                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                            {req.paymentMode || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="table-cell">
+                          {req.isPartialPayment ? (
+                            <div>
+                              <p className="text-sm font-semibold text-green-600">{formatCurrency(req.paidAmount || req.totalAmount)}</p>
+                              <p className="text-xs text-gray-400">of {formatCurrency(req.baseAmount)}</p>
+                            </div>
+                          ) : (
+                            <p className="text-sm">{formatCurrency(req.baseAmount)}</p>
+                          )}
+                        </td>
                         <td className="table-cell hidden lg:table-cell">
                           {req.lateFee > 0 ? <span className="text-red-500 text-sm">{formatCurrency(req.lateFee)}</span> : <span className="text-gray-400">—</span>}
                         </td>
-                        <td className="table-cell font-bold text-sm">{formatCurrency(req.totalAmount)}</td>
+                        <td className="table-cell">
+                          {req.isPartialPayment ? (
+                            <div>
+                              <p className="font-bold text-sm text-gray-900 dark:text-white">{formatCurrency(req.paidAmount || req.totalAmount)}</p>
+                              <p className="text-xs text-orange-500">Remaining: {formatCurrency(req.remainingAmount || 0)}</p>
+                            </div>
+                          ) : (
+                            <p className="font-bold text-sm">{formatCurrency(req.totalAmount)}</p>
+                          )}
+                        </td>
                         <td className="table-cell hidden md:table-cell text-xs font-mono text-gray-600 dark:text-gray-400">{req.referenceId}</td>
                         <td className="table-cell hidden lg:table-cell text-sm text-gray-500">{req.paymentDate || '—'}</td>
                         <td className="table-cell">

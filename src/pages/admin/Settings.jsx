@@ -246,6 +246,9 @@ export default function Settings() {
     principalName: '', workingDaysPerMonth: 26, academicYear: '2025-26',
     lateFeeBase: 250, lateFeePerDay: 25,
     paymentWebsiteUrl: '',
+    upiId: 'anandspecialschoolsurat@sbi',  // Default UPI ID
+    upiPayeeName: 'Anand Special School',
+    upiQrCodeUrl: 'https://i.imgur.com/YourQRCodeImage.png',  // Default QR code URL - admin should update this
   })
   const [feeSettings, setFeeSettings] = useState({
     defaultMonthlyDueDay:   5,
@@ -371,6 +374,44 @@ export default function Settings() {
             onChange={hPaymentUrl}
             note='Students will see an "Open School Payment Website" button linking here'
           />
+          
+          {/* UPI Payment Settings */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
+              </svg>
+              UPI Payment Settings
+            </h3>
+            <div className="space-y-4">
+              <SF
+                label="UPI ID"
+                value={settings.upiId}
+                onChange={(e) => setSettings((p) => ({ ...p, upiId: e.target.value }))}
+                note="Your UPI ID for receiving payments (e.g., 240140107066.riddhisingapuri@okaxis)"
+              />
+              <SF
+                label="UPI Payee Name"
+                value={settings.upiPayeeName}
+                onChange={(e) => setSettings((p) => ({ ...p, upiPayeeName: e.target.value }))}
+                note="Name shown in UPI payment apps (e.g., Anand Special School)"
+              />
+              <div>
+                <label className="label">QR Code Image URL (optional)</label>
+                <input
+                  type="url"
+                  value={settings.upiQrCodeUrl || ''}
+                  onChange={(e) => setSettings((p) => ({ ...p, upiQrCodeUrl: e.target.value }))}
+                  className="input-field"
+                  placeholder="https://i.imgur.com/YourImage.png or https://ibb.co/YourImage"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Upload your UPI QR code to <a href="https://imgur.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">Imgur</a> or <a href="https://imgbb.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">ImgBB</a>, then paste the direct image URL here
+                </p>
+              </div>
+            </div>
+          </div>
+          
           <div className="flex justify-end pt-2">
             <button type="submit" disabled={saving} className="btn-primary">
               {saving ? <LoadingSpinner size="sm" /> : <HiSave className="w-4 h-4" />}
