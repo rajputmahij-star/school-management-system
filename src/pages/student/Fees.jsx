@@ -391,7 +391,7 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
               {yearlyResult.length > 0 && (
                 <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-xl p-3">
                   <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 mb-2">
-                    Yearly Payment — 12 Months Coverage ({yearlyResult.length} months listed, pay for {Math.max(yearlyResult.length - 1, 0)}, get 1 free):
+                    Yearly Payment — 12 Months Coverage ({yearlyResult.length} months listed, pay for 11, get 1 free):
                   </p>
                   <div className="space-y-1 max-h-32 overflow-y-auto">
                     {yearlyResult.map((r) => (
