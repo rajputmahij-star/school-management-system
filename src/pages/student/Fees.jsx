@@ -899,11 +899,10 @@ export default function StudentFees() {
     const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
     const currentMonthPaid = isPaidStatus(ledgerMap[currentKey]?.status)
 
-    // Always extend at least 11 months into the future so quarterly (3 months)
-    // and yearly (11 months) payment modes always have enough periods to select.
-    // If current month is paid, extend 12 months (advance payment).
-    // If current month is unpaid, still extend 11 months for quarterly/yearly.
-    const futureMonths = currentMonthPaid ? 12 : 11
+    // Always extend at least 24 months into the future to ensure yearly payments
+    // can select any month and get 12 consecutive months after it.
+    // Example: If user selects a month 12 months from now, they still need 12 months after that.
+    const futureMonths = 24
     const endDate = new Date(now.getFullYear(), now.getMonth() + futureMonths, 1)
 
     const periods = []
