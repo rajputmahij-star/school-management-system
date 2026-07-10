@@ -160,20 +160,25 @@ export const applyProRata = (periods, startDate, monthlyBaseFee) => {
 // ─── Period generators ────────────────────────────────────────────────────────
 
 /**
- * Generate monthly period records from admissionDate up to today (inclusive).
+ * Generate monthly period records from admissionDate up to 12 months in the future.
  * Each record: { periodKey, label, dueDate, baseFee }
  * The first period is automatically pro-rated if start day > 1.
+ * 
+ * Changed to generate 12 months ahead to support yearly payment option.
  */
 export const generateMonthlyPeriods = (admissionDate, baseFee, dueDayOverride, defaultDueDay) => {
   const dueDay = dueDayOverride || defaultDueDay || DEFAULT_MONTHLY_DUE_DAY
   const start  = toJsDate(admissionDate)
   if (!start) return []
   const today = new Date()
+  
+  // Generate up to 12 months in the future to support yearly payments
+  const endDate = addMonths(today, 12)
 
   const periods = []
   let cursor = new Date(start.getFullYear(), start.getMonth(), 1)
 
-  while (!isAfter(cursor, new Date(today.getFullYear(), today.getMonth(), 1))) {
+  while (!isAfter(cursor, new Date(endDate.getFullYear(), endDate.getMonth(), 1))) {
     const y = cursor.getFullYear()
     const m = cursor.getMonth()
     const key     = monthlyPeriodKey(y, m)

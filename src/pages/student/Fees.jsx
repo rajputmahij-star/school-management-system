@@ -110,6 +110,9 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
       
       // Find this period in allRows
       const row = allRows.find(r => r.periodKey === periodKey)
+      
+      // Include if row exists and is unpaid
+      // This ensures we show all available unpaid months in the 12-month range
       if (row && !isPaidStatus(row.status)) {
         result.push(row)
       }
@@ -117,7 +120,9 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
     
     // Return all months found (user pays for these, gets 12 months coverage including 1 free)
     // The discount of 1 month fee will be calculated in the total
+    // Note: If less than 12 months available, shows what's available
     return result
+  }, [selectedKey, allRows])
   }, [selectedKey, allRows])
 
   // All unpaid rows for quarterly/yearly starting month dropdown
@@ -391,7 +396,7 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
               {yearlyResult.length > 0 && (
                 <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-xl p-3">
                   <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 mb-2">
-                    Yearly Payment — 12 Months Coverage ({yearlyResult.length} months listed, pay for 11, get 1 free):
+                    Yearly Payment — 12 Months Coverage ({yearlyResult.length} unpaid months found, pay for {yearlyResult.length}, get discount):
                   </p>
                   <div className="space-y-1 max-h-32 overflow-y-auto">
                     {yearlyResult.map((r) => (
@@ -401,6 +406,11 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
                       </div>
                     ))}
                   </div>
+                  {yearlyResult.length < 12 && (
+                    <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
+                      ⚠️ Note: Only {yearlyResult.length} unpaid months available in your 12-month cycle. Discount applies proportionally.
+                    </p>
+                  )}
                   {yearlyDiscount > 0 && (
                     <div className="mt-2 pt-2 border-t border-orange-300 dark:border-orange-600">
                       <p className="text-xs text-green-700 dark:text-green-400 font-semibold">
