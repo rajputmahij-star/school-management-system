@@ -41,15 +41,25 @@ function getYearsFromRows(rows) {
 
 // ─── Payment Modal ────────────────────────────────────────────────────────────
 // allRows = ALL periods (paid + unpaid), so we can show status per month
-const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, onClose, onSubmitted }) => {
+const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, upiSettings, onClose, onSubmitted }) => {
   const now = new Date()
   const years = getYearsFromRows(allRows)
-  const defaultYear = years[years.length - 1] || now.getFullYear()
+  // Default to current year (2026), not the last year in the list
+  const currentYear = now.getFullYear()
+  const defaultYear = years.includes(currentYear) ? currentYear : years[0] || currentYear
 
   const [mode,         setMode]         = useState('Monthly')   // Monthly | Quarterly | Yearly
   const [selectedYear, setSelectedYear] = useState(defaultYear)
   const [selectedKey,  setSelectedKey]  = useState('')          // starting periodKey
-  const [form,         setForm]         = useState({ referenceId: '', paymentDate: '', remarks: '' })
+  const [upiMethod,    setUpiMethod]    = useState('link')      // 'link' | 'qr' for UPI payment
+  const [form,         setForm]         = useState({ 
+    referenceId: '', 
+    paymentDate: '', 
+    remarks: '',
+    paymentMode: 'UPI',  // Default payment mode
+    customAmount: '',    // For partial payment
+    isPartialPayment: false
+  })
   const [saving,       setSaving]       = useState(false)
   const h = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }))
 
@@ -83,41 +93,25 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
     return result
   }, [selectedKey, allRows])
 
-  // Yearly: starting from selectedKey, pick next 11 unpaid months for the academic year
-  // Academic year runs from June (selected year) to May (next year)
+  // Yearly: starting from selectedKey, pick next 12 consecutive unpaid months (not just academic year)
+  // This gives true 12-month coverage regardless of which month is selected
   const yearlyResult = useMemo(() => {
     if (!selectedKey) return []
     
-    // Extract year and month from selectedKey
-    const [yearStr, monthStr] = selectedKey.split('-')
-    const selectedYearNum = parseInt(yearStr)
-    const selectedMonthNum = parseInt(monthStr)
+    const startIdx = allRows.findIndex((r) => r.periodKey === selectedKey)
+    if (startIdx === -1) return []
     
-    // Determine academic year start
-    // If selected month is June-December, academic year is June of selected year
-    // If selected month is January-May, academic year started in previous June
-    const academicYearStart = selectedMonthNum >= 6 ? selectedYearNum : selectedYearNum - 1
-    
-    // Build 12-month academic year cycle: June to May
-    const academicYearMonths = []
-    for (let i = 0; i < 12; i++) {
-      const month = 6 + i  // Start from June (month 6)
-      const year = month > 12 ? academicYearStart + 1 : academicYearStart
-      const adjustedMonth = month > 12 ? month - 12 : month
-      const key = `${year}-${String(adjustedMonth).padStart(2, '0')}`
-      academicYearMonths.push(key)
-    }
-    
-    // Find unpaid months in this academic year cycle
+    // Pick next 12 unpaid months starting from selected month
+    // But only pay for 11 (1 month free benefit)
     const result = []
-    for (const key of academicYearMonths) {
-      const row = allRows.find(r => r.periodKey === key)
-      if (row && !isPaidStatus(row.status)) {
-        result.push(row)
+    for (let i = startIdx; i < allRows.length && result.length < 12; i++) {
+      const r = allRows[i]
+      if (!isPaidStatus(r.status)) {
+        result.push(r)
       }
     }
     
-    // Return 11 months maximum (1 month free in academic year)
+    // Return first 11 months for payment (12th month is free)
     return result.slice(0, 11)
   }, [selectedKey, allRows])
 
@@ -139,6 +133,13 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
   const totalBase    = rowsToSubmit.reduce((s, r) => s + (r.baseFee || baseFeePerMonth), 0)
   const totalFine    = rowsToSubmit.reduce((s, r) => s + (r.fine || 0), 0)
   const totalPayable = totalBase + totalFine
+  
+  // Partial payment handling
+  const customAmount = parseFloat(form.customAmount) || 0
+  const actualPayment = form.isPartialPayment && customAmount > 0 && customAmount < totalPayable 
+    ? customAmount 
+    : totalPayable
+  const remainingAmount = totalPayable - actualPayment
 
   // Reset selectedKey when mode changes
   const handleModeChange = (m) => { setMode(m); setSelectedKey('') }
@@ -148,19 +149,34 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
     if (rowsToSubmit.length === 0)    { toast.error('Select a valid starting month'); return }
     if (!form.referenceId.trim())     { toast.error('Reference ID is required'); return }
     if (!form.paymentDate)            { toast.error('Payment date is required'); return }
+    if (form.isPartialPayment && customAmount >= totalPayable) { 
+      toast.error('Partial amount must be less than total'); return 
+    }
+    if (form.isPartialPayment && customAmount <= 0) { 
+      toast.error('Enter a valid partial payment amount'); return 
+    }
     setSaving(true)
     try {
-      await Promise.all(rowsToSubmit.map((row) =>
-        addPaymentRequest({
+      await Promise.all(rowsToSubmit.map((row, index) => {
+        // For partial payment, only the first period gets the partial amount
+        // The remaining amount will be carried forward
+        const isFirstPeriod = index === 0
+        const periodAmount = (row.baseFee || baseFeePerMonth) + (row.fine || 0)
+        
+        return addPaymentRequest({
           studentId:     userData.uid || userData.id,
           studentName:   userData.studentName,
           className:     userData.className,
           periodKey:     row.periodKey,
           billingPeriod: row.label,
           paymentType:   mode,
+          paymentMode:   form.paymentMode,  // Store payment mode
           baseAmount:    row.baseFee || baseFeePerMonth,
           lateFee:       row.fine || 0,
-          totalAmount:   (row.baseFee || baseFeePerMonth) + (row.fine || 0),
+          totalAmount:   periodAmount,
+          paidAmount:    form.isPartialPayment && isFirstPeriod ? actualPayment : periodAmount,
+          remainingAmount: form.isPartialPayment && isFirstPeriod ? remainingAmount : 0,
+          isPartialPayment: form.isPartialPayment && isFirstPeriod,
           referenceId:   form.referenceId.trim(),
           paymentDate:   form.paymentDate,
           remarks:       form.remarks.trim(),
@@ -168,7 +184,7 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
           submittedAt:   Timestamp.fromDate(new Date()),
           verifiedBy:    null, verifiedAt: null, rejectionReason: null,
         })
-      ))
+      }))
       toast.success(`Payment submitted for ${rowsToSubmit.length} month(s)!`)
       onSubmitted()
     } catch (err) { toast.error(err.message || 'Submission failed') }
@@ -367,7 +383,7 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
               {yearlyResult.length > 0 && (
                 <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-xl p-3">
                   <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 mb-2">
-                    Academic Year Payment — {yearlyResult.length} month(s) ({12 - yearlyResult.length} month{12 - yearlyResult.length !== 1 ? 's' : ''} free):
+                    Yearly Payment — Paying for {yearlyResult.length} month(s) now:
                   </p>
                   <div className="space-y-1 max-h-32 overflow-y-auto">
                     {yearlyResult.map((r) => (
@@ -398,11 +414,102 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
                 <span>Total to Pay</span>
                 <span style={{ color: '#E86E07' }}>{formatCurrency(totalPayable)}</span>
               </div>
+              {form.isPartialPayment && actualPayment > 0 && (
+                <>
+                  <div className="flex justify-between text-green-600 dark:text-green-400 font-medium">
+                    <span>Paying Now</span>
+                    <span>{formatCurrency(actualPayment)}</span>
+                  </div>
+                  <div className="flex justify-between text-orange-600 dark:text-orange-400 font-medium">
+                    <span>Remaining (carried to next month)</span>
+                    <span>{formatCurrency(remainingAmount)}</span>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
-          {/* UPI Payment Section */}
+          {/* Payment Mode Selection */}
           {rowsToSubmit.length > 0 && (
+            <div>
+              <label className="label">Payment Mode <span className="text-red-500">*</span></label>
+              <select 
+                value={form.paymentMode} 
+                onChange={h('paymentMode')} 
+                className="input-field"
+              >
+                <option value="UPI">UPI</option>
+                <option value="Net Banking">Net Banking</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Cash">Cash</option>
+                <option value="Credit Card">Credit Card</option>
+                <option value="Debit Card">Debit Card</option>
+              </select>
+            </div>
+          )}
+
+          {/* Partial Payment Option */}
+          {rowsToSubmit.length > 0 && (
+            <div className="border-2 border-purple-200 dark:border-purple-800 rounded-xl p-4 bg-purple-50 dark:bg-purple-900/20">
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="checkbox"
+                  id="partialPayment"
+                  checked={form.isPartialPayment}
+                  onChange={(e) => setForm(p => ({ ...p, isPartialPayment: e.target.checked, customAmount: '' }))}
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                />
+                <label htmlFor="partialPayment" className="font-semibold text-purple-900 dark:text-purple-100 text-sm cursor-pointer">
+                  Pay Partial Amount (if cannot pay full amount)
+                </label>
+              </div>
+              
+              {form.isPartialPayment && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="label text-xs">Amount to Pay Now <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">₹</span>
+                      <input
+                        type="number"
+                        value={form.customAmount}
+                        onChange={h('customAmount')}
+                        className="input-field pl-7"
+                        placeholder={`Enter amount (max: ${totalPayable})`}
+                        min="1"
+                        max={totalPayable}
+                        step="1"
+                      />
+                    </div>
+                  </div>
+                  
+                  {customAmount > 0 && customAmount < totalPayable && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 text-xs space-y-1">
+                      <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                        <span>Total Fee:</span>
+                        <span className="font-semibold">{formatCurrency(totalPayable)}</span>
+                      </div>
+                      <div className="flex justify-between text-green-700 dark:text-green-300">
+                        <span>Paying Now:</span>
+                        <span className="font-semibold">{formatCurrency(actualPayment)}</span>
+                      </div>
+                      <div className="flex justify-between text-orange-700 dark:text-orange-300 pt-1 border-t border-purple-200 dark:border-purple-700">
+                        <span>Remaining:</span>
+                        <span className="font-semibold">{formatCurrency(remainingAmount)}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="bg-purple-100 dark:bg-purple-900/40 rounded-lg p-2 text-xs text-purple-800 dark:text-purple-200">
+                    💡 <strong>Note:</strong> Remaining amount will be added to your next month's fee automatically.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* UPI Payment Section - Only show if UPI is selected AND not partial payment */}
+          {rowsToSubmit.length > 0 && form.paymentMode === 'UPI' && !form.isPartialPayment && upiSettings?.upiId && (
             <div className="border-2 border-blue-200 dark:border-blue-800 rounded-xl p-4 bg-blue-50 dark:bg-blue-900/20">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
@@ -416,48 +523,246 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, o
                 </div>
               </div>
               
-              <div className="space-y-2">
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-blue-100 dark:border-blue-800">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">UPI ID</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-mono text-sm font-semibold text-gray-900 dark:text-white break-all">
-                      240140107066.riddhisingapuri@okaxis
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText('240140107066.riddhisingapuri@okaxis')
-                        toast.success('UPI ID copied!')
-                      }}
-                      className="flex-shrink-0 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                      title="Copy UPI ID"
-                    >
-                      <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                <a
-                  href={`upi://pay?pa=240140107066.riddhisingapuri@okaxis&pn=Anand%20Special%20School&am=${totalPayable}&cu=INR&tn=Fee%20Payment%20for%20${rowsToSubmit.length}%20month(s)`}
-                  className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
+              {/* UPI Method Selector: Link or QR Code */}
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setUpiMethod('link')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    upiMethod === 'link'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-blue-200 dark:border-blue-700'
+                  }`}
                 >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 18c-3.87-.94-7-5.17-7-9V8.69l7-3.5 7 3.5V11c0 3.83-3.13 8.06-7 9z"/>
-                  </svg>
-                  Pay ₹{totalPayable.toLocaleString('en-IN')} via UPI
-                </a>
-
-                <p className="text-xs text-center text-gray-500 dark:text-gray-400">
-                  Click to open your UPI app (PhonePe, GPay, Paytm, etc.)
-                </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    Pay via Link
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUpiMethod('qr')}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    upiMethod === 'qr'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-blue-200 dark:border-blue-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                    </svg>
+                    Scan QR Code
+                  </div>
+                </button>
               </div>
+
+              {/* UPI Link Payment */}
+              {upiMethod === 'link' && (
+                <div className="space-y-3">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-blue-100 dark:border-blue-800">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">UPI ID</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-mono text-sm font-semibold text-gray-900 dark:text-white break-all">
+                        {upiSettings.upiId}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(upiSettings.upiId)
+                          toast.success('UPI ID copied!')
+                        }}
+                        className="flex-shrink-0 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        title="Copy UPI ID"
+                      >
+                        <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* UPI Payment URL - visible and copyable */}
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-blue-100 dark:border-blue-800">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">UPI Payment Link</p>
+                    <div className="flex items-start gap-2">
+                      <code className="flex-1 text-xs font-mono text-blue-600 dark:text-blue-400 break-all bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+                        {`upi://pay?pa=${encodeURIComponent(upiSettings.upiId)}&pn=${encodeURIComponent(upiSettings.upiPayeeName || 'School')}&am=${actualPayment}&cu=INR&tn=Fee%20Payment%20for%20${rowsToSubmit.length}%20month(s)`}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const upiUrl = `upi://pay?pa=${encodeURIComponent(upiSettings.upiId)}&pn=${encodeURIComponent(upiSettings.upiPayeeName || 'School')}&am=${actualPayment}&cu=INR&tn=Fee%20Payment%20for%20${rowsToSubmit.length}%20month(s)`
+                          navigator.clipboard.writeText(upiUrl)
+                          toast.success('UPI payment link copied!')
+                        }}
+                        className="flex-shrink-0 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        title="Copy UPI Link"
+                      >
+                        <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">Copy this link and paste in any UPI app to pay</p>
+                  </div>
+
+                  <a
+                    href={`upi://pay?pa=${encodeURIComponent(upiSettings.upiId)}&pn=${encodeURIComponent(upiSettings.upiPayeeName || 'School')}&am=${actualPayment}&cu=INR&tn=Fee%20Payment%20for%20${rowsToSubmit.length}%20month(s)`}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 18c-3.87-.94-7-5.17-7-9V8.69l7-3.5 7 3.5V11c0 3.83-3.13 8.06-7 9z"/>
+                    </svg>
+                    Pay ₹{actualPayment.toLocaleString('en-IN')} via UPI
+                  </a>
+
+                  <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+                    Click to open your UPI app (PhonePe, GPay, Paytm, etc.)
+                  </p>
+                </div>
+              )}
+
+              {/* QR Code Payment */}
+              {upiMethod === 'qr' && upiSettings.upiQrCodeUrl && (
+                <div className="space-y-3">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-blue-100 dark:border-blue-800">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 text-center font-semibold">Scan QR Code to Pay</p>
+                    <div className="flex justify-center">
+                      <img 
+                        src={upiSettings.upiQrCodeUrl} 
+                        alt="UPI QR Code" 
+                        className="w-48 h-48 object-contain border-2 border-gray-200 dark:border-gray-700 rounded-lg"
+                        onError={(e) => {
+                          e.target.style.display = 'none'
+                          e.target.nextElementSibling.style.display = 'block'
+                        }}
+                      />
+                      <div style={{ display: 'none' }} className="text-center text-sm text-red-500 p-4">
+                        QR Code failed to load
+                      </div>
+                    </div>
+                    <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                      <p className="text-xs text-center text-blue-700 dark:text-blue-300">
+                        <strong>Amount to Pay:</strong> ₹{actualPayment.toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-blue-100 dark:border-blue-800">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">UPI ID (for manual entry)</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-mono text-xs font-semibold text-gray-900 dark:text-white break-all">
+                        {upiSettings.upiId}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(upiSettings.upiId)
+                          toast.success('UPI ID copied!')
+                        }}
+                        className="flex-shrink-0 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        title="Copy UPI ID"
+                      >
+                        <svg className="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+                    Open any UPI app and scan the QR code above
+                  </p>
+                </div>
+              )}
+
+              {/* Fallback if QR method selected but no QR code URL */}
+              {upiMethod === 'qr' && !upiSettings.upiQrCodeUrl && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                    ⚠️ QR Code not available. Please use "Pay via Link" option or contact school admin.
+                  </p>
+                </div>
+              )}
 
               <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
                 <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mb-1">📝 After Payment:</p>
                 <p className="text-xs text-gray-600 dark:text-gray-400">
                   Enter the transaction/reference ID below and submit for verification
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Credit Card Payment Section - Only show if Credit Card is selected AND not partial payment */}
+          {rowsToSubmit.length > 0 && form.paymentMode === 'Credit Card' && !form.isPartialPayment && (
+            <div className="border-2 border-purple-200 dark:border-purple-800 rounded-xl p-4 bg-purple-50 dark:bg-purple-900/20">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-semibold text-purple-900 dark:text-purple-100 text-sm">Pay via Credit Card</p>
+                  <p className="text-xs text-purple-600 dark:text-purple-400">Secure Online Payment Gateway</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-purple-100 dark:border-purple-800">
+                  <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 text-center">
+                    <strong>Amount to Pay:</strong> ₹{actualPayment.toLocaleString('en-IN')}
+                  </p>
+                  
+                  <a
+                    href="https://rzp.io/rzp/anandspecialschoolpaymentpage"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    </svg>
+                    Open Credit Card Payment Page
+                    <HiExternalLink className="w-4 h-4" />
+                  </a>
+
+                  <div className="mt-3 flex items-center justify-center gap-3 text-xs text-gray-500">
+                    <div className="flex items-center gap-1">
+                      <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      <span>Secure</span>
+                    </div>
+                    <span>•</span>
+                    <div className="flex items-center gap-1">
+                      <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                      <span>SSL Encrypted</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-purple-100 dark:bg-purple-900/40 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-semibold text-purple-900 dark:text-purple-200">💳 Accepted Cards:</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="px-2 py-1 bg-white dark:bg-gray-800 rounded text-xs font-medium text-gray-700 dark:text-gray-300">Visa</span>
+                    <span className="px-2 py-1 bg-white dark:bg-gray-800 rounded text-xs font-medium text-gray-700 dark:text-gray-300">Mastercard</span>
+                    <span className="px-2 py-1 bg-white dark:bg-gray-800 rounded text-xs font-medium text-gray-700 dark:text-gray-300">RuPay</span>
+                    <span className="px-2 py-1 bg-white dark:bg-gray-800 rounded text-xs font-medium text-gray-700 dark:text-gray-300">Amex</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-purple-200 dark:border-purple-700">
+                <p className="text-xs text-purple-700 dark:text-purple-300 font-medium mb-1">📝 After Payment:</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  After completing payment, copy the transaction ID from the payment gateway and enter it below for verification
                 </p>
               </div>
             </div>
@@ -614,6 +919,13 @@ export default function StudentFees() {
   // Future months are available in allRows for the payment modal (quarterly/yearly)
   const historyRows     = allRows.filter((r) => r.periodKey <= currentKey2)
   const paymentWebsiteUrl = settings?.paymentWebsiteUrl || ''
+  
+  // Extract UPI settings for payment modal
+  const upiSettings = {
+    upiId: settings?.upiId || 'anandspecialschoolsurat@sbi',  // Fallback to default
+    upiPayeeName: settings?.upiPayeeName || 'Anand Special School',
+    upiQrCodeUrl: settings?.upiQrCodeUrl || '',
+  }
 
   if (loading) return <div className="flex justify-center p-12"><LoadingSpinner size="lg" /></div>
 
@@ -731,6 +1043,7 @@ export default function StudentFees() {
           baseFeePerMonth={baseFeePerMonth}
           userData={userData}
           paymentWebsiteUrl={paymentWebsiteUrl}
+          upiSettings={upiSettings}
           onClose={() => setShowModal(false)}
           onSubmitted={() => { setShowModal(false); load() }}
         />

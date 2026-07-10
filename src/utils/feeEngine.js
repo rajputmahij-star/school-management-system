@@ -292,8 +292,11 @@ export const generatePeriods = (billingType, admissionDate, baseFee, dueDayOverr
 /**
  * Merge generated periods with existing ledger records from Firestore.
  * Returns enriched array ready for UI.
- * ledgerMap: { [periodKey]: { status, paidAt, razorpayId, amountPaid } }
+ * ledgerMap: { [periodKey]: { status, paidAt, razorpayId, amountPaid, baseFee, carriedFromPreviousMonth } }
  * caseHistoryDate: student's admission/enrollment date
+ * 
+ * IMPORTANT: If a ledger entry exists with a baseFee (e.g., from partial payment carryforward),
+ * use that instead of the generated period's baseFee.
  */
 export const mergeLedger = (periods, ledgerMap, lateFeeBase, lateFeePerDay, caseHistoryDate = null) => {
   return periods.map((p) => {
@@ -301,19 +304,27 @@ export const mergeLedger = (periods, ledgerMap, lateFeeBase, lateFeePerDay, case
     const isPaid  = record.status === 'Paid'
     // If admin waived the fine, honour that — fine = 0
     const hasWaiver = record.waivedFine > 0
+    
+    // CRITICAL: Use ledger's baseFee if it exists (includes carried forward amounts)
+    // Otherwise use the generated period's baseFee
+    const effectiveBaseFee = record.baseFee !== undefined ? record.baseFee : p.baseFee
+    
     const { daysLate, fine } = (isPaid || hasWaiver)
       ? { daysLate: 0, fine: 0 }
       : calcLateFee(p.dueDate, lateFeeBase, lateFeePerDay, caseHistoryDate)
     return {
       ...p,
+      baseFee:    effectiveBaseFee,  // Use ledger baseFee if exists (for carryforward)
       status:     record.status || 'Pending',
       paidAt:     record.paidAt || null,
       amountPaid: record.amountPaid || 0,
       fine,
       daysLate,
       waivedFine: record.waivedFine || 0,
-      totalPayable: p.baseFee + fine,
+      totalPayable: effectiveBaseFee + fine,
       ledgerId:   record.id || null,
+      carriedFromPreviousMonth: record.carriedFromPreviousMonth || 0,  // Track carryforward
+      previousPeriodKey: record.previousPeriodKey || null,
     }
   })
 }

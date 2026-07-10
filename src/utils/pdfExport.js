@@ -114,19 +114,28 @@ export const generateRequestReceipt = async (req, student) => {
   band('FEE DETAILS', 22, 55, 122)
   field('Billing Period:', req.billingPeriod)
   field('Payment Type:', req.paymentType)
+  field('Payment Mode:', req.paymentMode || 'Not Specified')
   field('Tuition Fee:', fmtRs(req.baseAmount))
   field('Late Fee (if any):', req.lateFee > 0 ? fmtRs(req.lateFee) : 'None')
 
   // Total / Paid / Remaining
   const totalFee  = (req.baseAmount || 0) + (req.lateFee || 0)
-  const paid      = req.totalAmount || 0
-  const remaining = Math.max(0, totalFee - paid)
+  const paid      = req.paidAmount || req.totalAmount || 0
+  const remaining = req.remainingAmount || Math.max(0, totalFee - paid)
 
   hr()
   field('Total Fee:', fmtRs(totalFee), false)
   field('Amount Paid:', fmtRs(paid), true, [10, 90, 40])
   if (remaining > 0) {
     field('Remaining Balance:', fmtRs(remaining), true, [170, 25, 25])
+  }
+  if (req.isPartialPayment) {
+    y += 2
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8)
+    doc.setTextColor(170, 25, 25)
+    doc.text('* Partial Payment - Remaining amount will be added to next period', M + 4, y)
+    y += 2
   }
   y += 4
 
@@ -143,6 +152,7 @@ export const generateRequestReceipt = async (req, student) => {
   // ── VERIFICATION ─────────────────────────────────────────────────────────
   band('VERIFICATION', 22, 55, 122)
   field('Payment Status:', 'PAID & VERIFIED', true, [10, 90, 40])
+  field('Payment Mode:', req.paymentMode || 'Not Specified')
   field('Reference ID:', req.referenceId)
   field('Payment Date:', req.paymentDate)
   field('Verified By:', req.verifiedBy || 'Admin')
