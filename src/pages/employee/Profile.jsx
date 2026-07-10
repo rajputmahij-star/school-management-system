@@ -12,7 +12,7 @@ const MONTHS = ['January','February','March','April','May','June',
   'July','August','September','October','November','December']
 
 export default function EmployeeProfile() {
-  const { userData } = useAuth()
+  const { userData, refreshUserData } = useAuth()
   const now = new Date()
   const [salaries,    setSalaries]    = useState([])
   const [salLoading,  setSalLoading]  = useState(false)
@@ -21,6 +21,11 @@ export default function EmployeeProfile() {
   const [settings,    setSettings]    = useState({})
 
   const uid = userData?.uid || userData?.id
+
+  // Refresh user data on mount to pick up any photo changes made by admin
+  useEffect(() => {
+    refreshUserData().catch(() => {})
+  }, [])
 
   useEffect(() => {
     getSettings().then((s) => setSettings(s || {})).catch(() => {})
