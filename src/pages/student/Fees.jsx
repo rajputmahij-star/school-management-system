@@ -123,7 +123,6 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
     // Note: If less than 12 months available, shows what's available
     return result
   }, [selectedKey, allRows])
-  }, [selectedKey, allRows])
 
   // All unpaid rows for quarterly/yearly starting month dropdown
   const unpaidRows = useMemo(() => allRows.filter((r) => !isPaidStatus(r.status)), [allRows])
