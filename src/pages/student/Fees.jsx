@@ -29,24 +29,25 @@ const StatusBadge = ({ status, daysLate }) => {
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const isPaidStatus = (s) => s === 'Paid' || s === 'Advance Paid' || s === 'Verification Pending'
 
-// Group allRows by year for the year dropdown
-function getYearsFromRows(rows) {
-  const years = new Set()
-  rows.forEach((r) => {
-    const [y] = r.periodKey.split('-')
-    years.add(Number(y))
-  })
-  return [...years].sort()
+// Generate year options dynamically - from current year to 10 years in the future
+function getAvailableYears() {
+  const currentYear = new Date().getFullYear()
+  const years = []
+  // Allow selection of current year + 10 years into future
+  for (let i = 0; i <= 10; i++) {
+    years.push(currentYear + i)
+  }
+  return years
 }
 
 // ─── Payment Modal ────────────────────────────────────────────────────────────
 // allRows = ALL periods (paid + unpaid), so we can show status per month
 const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, upiSettings, onClose, onSubmitted }) => {
   const now = new Date()
-  const years = getYearsFromRows(allRows)
+  const years = getAvailableYears()  // Changed: use dynamic year generation
   // Default to current year (2026), not the last year in the list
   const currentYear = now.getFullYear()
-  const defaultYear = years.includes(currentYear) ? currentYear : years[0] || currentYear
+  const defaultYear = currentYear
 
   const [mode,         setMode]         = useState('Monthly')   // Monthly | Quarterly | Yearly
   const [selectedYear, setSelectedYear] = useState(defaultYear)
@@ -70,30 +71,65 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
     return m
   }, [allRows])
 
-  // Monthly: show all months of selectedYear with paid/pending status
+  // Monthly: show all 12 months of selectedYear regardless of whether they exist in database
+  // This allows users to select any future month for payment
   const monthlyOptions = useMemo(() => {
     return MONTH_NAMES.map((name, idx) => {
       const key = `${selectedYear}-${String(idx + 1).padStart(2, '0')}`
       const row = rowMap[key]
       const paid = row ? isPaidStatus(row.status) : false
-      return { key, name, paid, row }
-    }).filter((o) => o.row) // only show months that exist in the student's periods
-  }, [selectedYear, rowMap])
+      // Create a placeholder row if month doesn't exist in database yet
+      const displayRow = row || {
+        periodKey: key,
+        label: `${name} ${selectedYear}`,
+        baseFee: baseFeePerMonth,
+        fine: 0,
+        status: 'Pending',
+        dueDate: new Date(selectedYear, idx, 5) // Default due date: 5th of month
+      }
+      return { key, name, paid, row: displayRow }
+    })
+    // Show all 12 months, don't filter out future months
+  }, [selectedYear, rowMap, baseFeePerMonth])
 
-  // Quarterly: starting from selectedKey, pick next 3 unpaid months (skipping paid ones)
+  // Quarterly: starting from selectedKey, pick next 3 consecutive months
+  // Generate placeholder months if they don't exist in database yet
   const quarterlyResult = useMemo(() => {
     if (!selectedKey) return []
-    const startIdx = allRows.findIndex((r) => r.periodKey === selectedKey)
-    if (startIdx === -1) return []
+    const [startYear, startMonth] = selectedKey.split('-').map(Number)
     const result = []
-    for (let i = startIdx; i < allRows.length && result.length < 3; i++) {
-      const r = allRows[i]
-      if (!isPaidStatus(r.status)) result.push(r)
+    
+    // Generate 3 consecutive month keys
+    for (let i = 0; i < 3; i++) {
+      const monthOffset = startMonth - 1 + i
+      const year = startYear + Math.floor(monthOffset / 12)
+      const month = (monthOffset % 12) + 1
+      const periodKey = `${year}-${String(month).padStart(2, '0')}`
+      
+      const row = allRows.find(r => r.periodKey === periodKey)
+      
+      // If row exists and is paid, skip it
+      if (row && isPaidStatus(row.status)) continue
+      
+      // Use existing row or create placeholder
+      const displayRow = row || {
+        periodKey,
+        label: `${MONTH_NAMES[month - 1]} ${year}`,
+        baseFee: baseFeePerMonth,
+        fine: 0,
+        status: 'Pending',
+        dueDate: new Date(year, month - 1, 5)
+      }
+      
+      result.push(displayRow)
+      if (result.length >= 3) break
     }
+    
     return result
-  }, [selectedKey, allRows])
+  }, [selectedKey, allRows, baseFeePerMonth])
 
   // Yearly: starting from selectedKey, pick next 12 consecutive months
+  // Generate placeholder months if they don't exist in database yet
   // Calculate fee for 12 months, then subtract 1 month fee (pay for 11, get 12 coverage)
   const yearlyResult = useMemo(() => {
     if (!selectedKey) return []
@@ -111,18 +147,27 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
       // Find this period in allRows
       const row = allRows.find(r => r.periodKey === periodKey)
       
-      // Include if row exists and is unpaid
-      // This ensures we show all available unpaid months in the 12-month range
-      if (row && !isPaidStatus(row.status)) {
-        result.push(row)
+      // If row exists and is paid, skip it and continue
+      if (row && isPaidStatus(row.status)) continue
+      
+      // Use existing row or create placeholder
+      const displayRow = row || {
+        periodKey,
+        label: `${MONTH_NAMES[month - 1]} ${year}`,
+        baseFee: baseFeePerMonth,
+        fine: 0,
+        status: 'Pending',
+        dueDate: new Date(year, month - 1, 5)
       }
+      
+      result.push(displayRow)
     }
     
-    // Return all months found (user pays for these, gets 12 months coverage including 1 free)
+    // Return all unpaid months found (up to 12)
     // The discount of 1 month fee will be calculated in the total
     // Note: If less than 12 months available, shows what's available
     return result
-  }, [selectedKey, allRows])
+  }, [selectedKey, allRows, baseFeePerMonth])
 
   // All unpaid rows for quarterly/yearly starting month dropdown
   const unpaidRows = useMemo(() => allRows.filter((r) => !isPaidStatus(r.status)), [allRows])
