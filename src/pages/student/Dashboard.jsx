@@ -8,10 +8,15 @@ import { HiAcademicCap, HiCalendar, HiCurrencyRupee, HiCheck } from 'react-icons
 import { format } from 'date-fns'
 
 export default function StudentDashboard() {
-  const { userData } = useAuth()
+  const { userData, refreshUserData } = useAuth()
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const now = new Date()
+
+  // Refresh on mount to pick up latest photo set by admin
+  useEffect(() => {
+    refreshUserData().catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (userData?.id) loadStats()
