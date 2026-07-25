@@ -405,7 +405,54 @@ export const updateFormOptions = async (data) => {
   return setDocument('settings', 'form_options', data)
 }
 
-// ─── Leave Requests (Employee) ────────────────────────────────────────────────
+// ─── Salary Revisions ─────────────────────────────────────────────────────────
+// Collection: salary_revisions
+// Fields: employeeId, employeeName, amount, effectiveMonth, effectiveYear, createdAt
+
+export const addSalaryRevision = async (data) => {
+  return addDocument('salary_revisions', data)
+}
+
+export const getSalaryRevisions = async (employeeId) => {
+  if (employeeId) {
+    const docs = await getCollection('salary_revisions', [where('employeeId', '==', employeeId)])
+    return docs.sort((a, b) => {
+      // Sort by year desc, then month desc
+      if (b.effectiveYear !== a.effectiveYear) return b.effectiveYear - a.effectiveYear
+      return b.effectiveMonth - a.effectiveMonth
+    })
+  }
+  const docs = await getCollection('salary_revisions', [])
+  return docs.sort((a, b) => {
+    if (b.effectiveYear !== a.effectiveYear) return b.effectiveYear - a.effectiveYear
+    return b.effectiveMonth - a.effectiveMonth
+  })
+}
+
+export const getAllSalaryRevisions = async () => {
+  return getCollection('salary_revisions', [])
+}
+
+/**
+ * Get the effective salary for an employee for a given month/year.
+ * Returns the most recent revision whose effectiveMonth/Year <= target month/year.
+ * Falls back to employee.monthlySalary if no revisions exist.
+ */
+export const getEffectiveSalary = (revisions, employeeMonthlySalary, targetMonth, targetYear) => {
+  // Filter revisions that are effective on or before the target month
+  const applicable = revisions.filter((r) => {
+    if (r.effectiveYear < targetYear) return true
+    if (r.effectiveYear === targetYear && r.effectiveMonth <= targetMonth) return true
+    return false
+  })
+  if (applicable.length === 0) return employeeMonthlySalary
+  // Sort desc and take the most recent
+  applicable.sort((a, b) => {
+    if (b.effectiveYear !== a.effectiveYear) return b.effectiveYear - a.effectiveYear
+    return b.effectiveMonth - a.effectiveMonth
+  })
+  return applicable[0].amount
+}
 // Collection: leave_requests
 // Fields: employeeId, employeeName, designation, fromDate, toDate, reason,
 //         status ('Pending'|'Approved'|'Rejected'), rejectionReason,
