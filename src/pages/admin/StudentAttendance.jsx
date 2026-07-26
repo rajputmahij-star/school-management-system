@@ -44,8 +44,24 @@ export default function AdminStudentAttendance() {
     setLoading(true)
     try {
       const allStudents   = await getStudents()
-      const classStudents = allStudents.filter((s) => s.className === selectedClass && !s.leaveDate)
-      const existing      = await getStudentAttendanceByClass(selectedClass, selectedDate)
+      const selectedDateObj = new Date(selectedDate + 'T00:00:00')
+      const classStudents = allStudents.filter((s) => {
+        if (s.className !== selectedClass || s.leaveDate) return false
+        // Only show students whose Case History Date (or Admission Date) is on or before selected date
+        const startRaw = s.caseHistoryDate || s.admissionDate
+        if (!startRaw) return true // no date set — include by default
+        const startDate = startRaw?.toDate ? startRaw.toDate() : new Date(startRaw)
+        return startDate <= selectedDateObj
+      })
+      // Sort by Case History Date (or Admission Date) ascending
+      classStudents.sort((a, b) => {
+        const aRaw = a.caseHistoryDate || a.admissionDate
+        const bRaw = b.caseHistoryDate || b.admissionDate
+        const aDate = aRaw?.toDate ? aRaw.toDate() : aRaw ? new Date(aRaw) : new Date(0)
+        const bDate = bRaw?.toDate ? bRaw.toDate() : bRaw ? new Date(bRaw) : new Date(0)
+        return aDate - bDate
+      })
+      const existing = await getStudentAttendanceByClass(selectedClass, selectedDate)
       const map = {}
       classStudents.forEach((s) => {
         const found = existing.find((a) => a.studentId === (s.uid || s.id))
@@ -63,7 +79,23 @@ export default function AdminStudentAttendance() {
     setLoadingSummary(true)
     try {
       const allStudents   = await getStudents()
-      const classStudents = allStudents.filter((s) => s.className === summaryClass && !s.leaveDate)
+      // For summary: show students who had joined (caseHistoryDate or admissionDate) by end of the selected month
+      const monthEnd = new Date(summaryYear, summaryMonth, 0, 23, 59, 59)
+      const classStudents = allStudents.filter((s) => {
+        if (s.className !== summaryClass || s.leaveDate) return false
+        const startRaw = s.caseHistoryDate || s.admissionDate
+        if (!startRaw) return true
+        const startDate = startRaw?.toDate ? startRaw.toDate() : new Date(startRaw)
+        return startDate <= monthEnd
+      })
+      // Sort by Case History Date ascending
+      classStudents.sort((a, b) => {
+        const aRaw = a.caseHistoryDate || a.admissionDate
+        const bRaw = b.caseHistoryDate || b.admissionDate
+        const aDate = aRaw?.toDate ? aRaw.toDate() : aRaw ? new Date(aRaw) : new Date(0)
+        const bDate = bRaw?.toDate ? bRaw.toDate() : bRaw ? new Date(bRaw) : new Date(0)
+        return aDate - bDate
+      })
       const summaries = await Promise.all(classStudents.map(async (s) => {
         const sid     = s.uid || s.id
         const records = await getStudentAttendance(sid, summaryMonth, summaryYear)

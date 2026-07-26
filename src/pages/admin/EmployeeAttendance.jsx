@@ -64,7 +64,20 @@ export default function EmployeeAttendancePage() {
         getEmployees(),
         getAllEmployeeAttendanceByDate(new Date(selectedDate + 'T00:00:00')),
       ])
-      const active = emps.filter((e) => !e.leaveDate)
+      const selectedDateObj = new Date(selectedDate + 'T00:00:00')
+      // Only show employees who had joined on or before the selected date
+      const active = emps.filter((e) => {
+        if (e.leaveDate) return false
+        if (!e.joiningDate) return true
+        const joined = e.joiningDate?.toDate ? e.joiningDate.toDate() : new Date(e.joiningDate)
+        return joined <= selectedDateObj
+      })
+      // Sort by Joining Date ascending
+      active.sort((a, b) => {
+        const aDate = a.joiningDate?.toDate ? a.joiningDate.toDate() : a.joiningDate ? new Date(a.joiningDate) : new Date(0)
+        const bDate = b.joiningDate?.toDate ? b.joiningDate.toDate() : b.joiningDate ? new Date(b.joiningDate) : new Date(0)
+        return aDate - bDate
+      })
       const map = {}
       active.forEach((e) => {
         const found = existing.find((a) => a.employeeId === e.id)
@@ -87,7 +100,21 @@ export default function EmployeeAttendancePage() {
         getEmployees(),
         getAllEmployeeAttendanceByMonth(summaryMonth, summaryYear),
       ])
-      setEmployees(emps.filter((e) => !e.leaveDate))
+      // Only show employees who had joined by end of the selected month
+      const monthEnd = new Date(summaryYear, summaryMonth, 0, 23, 59, 59)
+      const active = emps.filter((e) => {
+        if (e.leaveDate) return false
+        if (!e.joiningDate) return true
+        const joined = e.joiningDate?.toDate ? e.joiningDate.toDate() : new Date(e.joiningDate)
+        return joined <= monthEnd
+      })
+      // Sort by Joining Date ascending
+      active.sort((a, b) => {
+        const aDate = a.joiningDate?.toDate ? a.joiningDate.toDate() : a.joiningDate ? new Date(a.joiningDate) : new Date(0)
+        const bDate = b.joiningDate?.toDate ? b.joiningDate.toDate() : b.joiningDate ? new Date(b.joiningDate) : new Date(0)
+        return aDate - bDate
+      })
+      setEmployees(active)
       setMonthRecords(records)
     } catch (err) {
       toast.error(`Failed to load monthly data: ${err.message}`)
