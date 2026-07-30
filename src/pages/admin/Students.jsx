@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle, HiUpload, HiTemplate, HiX } from 'react-icons/hi'
-import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument, invalidateStudentsCache } from '../../firebase/firestore'
+import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument, invalidateStudentsCache, savePendingEmailChange } from '../../firebase/firestore'
 import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
@@ -261,7 +261,8 @@ export default function Students() {
           ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
         })
         if (emailChanged) {
-          toast.success('Student updated. New login email will apply on their next login.')
+          await savePendingEmailChange(uid, editData.email || '', newEmail)
+          toast.success('Student updated. They can now log in with the new email.')
         }
         toast.success('Student updated successfully')
       } else {

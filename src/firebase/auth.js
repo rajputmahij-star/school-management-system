@@ -12,20 +12,20 @@ import { auth, db } from './config'
 
 /**
  * Try to find the current Auth email for a user who entered their pendingEmail.
- * Searches students and employees collections for a doc where pendingEmail == enteredEmail.
- * Returns the actual stored email (the one registered in Firebase Auth), or null.
+ * Reads from pending_email_changes collection — publicly readable, no auth needed.
  */
 const findAuthEmailByPendingEmail = async (pendingEmail) => {
-  const collections = ['students', 'employees']
-  for (const col of collections) {
-    const q = query(collection(db, col), where('pendingEmail', '==', pendingEmail))
+  try {
+    const q = query(
+      collection(db, 'pending_email_changes'),
+      where('newEmail', '==', pendingEmail.trim().toLowerCase())
+    )
     const snap = await getDocs(q)
     if (!snap.empty) {
-      const data = snap.docs[0].data()
-      // Return the actual Firebase Auth email (stored as 'email' before pendingEmail was set)
-      // We stored oldEmail when setting pendingEmail
-      return data.oldEmail || null
+      return snap.docs[0].data().oldEmail || null
     }
+  } catch (err) {
+    console.warn('pendingEmail lookup failed:', err.message)
   }
   return null
 }
@@ -104,10 +104,19 @@ const applyPendingEmailChange = async (uid, docRef, userData) => {
     await updateDoc(docRef, {
       email: userData.pendingEmail,
       pendingEmail: null,
+      oldEmail: null,
       updatedAt: serverTimestamp(),
     })
+    // Clean up the pending_email_changes record
+    const q = query(
+      collection(db, 'pending_email_changes'),
+      where('uid', '==', uid)
+    )
+    const snap = await getDocs(q)
+    snap.forEach(async (d) => {
+      try { await updateDoc(d.ref, { completed: true }) } catch {}
+    })
   } catch (err) {
-    // If update fails (e.g. email already taken), clear the pending flag anyway
     console.warn('Pending email change failed:', err.message)
   }
 }

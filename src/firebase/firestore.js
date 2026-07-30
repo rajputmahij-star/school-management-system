@@ -458,6 +458,17 @@ export const getEffectiveSalary = (revisions, employeeMonthlySalary, targetMonth
 //         status ('Pending'|'Approved'|'Rejected'), rejectionReason,
 //         submittedAt, reviewedBy, reviewedAt
 
+// ─── Pending Email Changes ─────────────────────────────────────────────────────
+export const savePendingEmailChange = async (uid, oldEmail, newEmail) => {
+  const docId = `${uid}_email_change`
+  return setDocument('pending_email_changes', docId, {
+    uid,
+    oldEmail: oldEmail.trim().toLowerCase(),
+    newEmail: newEmail.trim().toLowerCase(),
+    completed: false,
+  })
+}
+
 export const addLeaveRequest = async (data) => {
   return addDocument('leave_requests', data)
 }

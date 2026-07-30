@@ -4,7 +4,7 @@ import {
   HiDownload, HiKey, HiUserRemove, HiUserAdd,
   HiUpload, HiTemplate, HiCheckCircle, HiExclamation,
 } from 'react-icons/hi'
-import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument } from '../../firebase/firestore'
+import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument, savePendingEmailChange } from '../../firebase/firestore'
 import {
   createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
   deactivateEmployee, activateEmployee, adminSetPassword,
@@ -210,7 +210,8 @@ export default function Employees() {
           ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
         })
         if (emailChanged) {
-          toast.success('Employee updated. New login email will apply on their next login.')
+          await savePendingEmailChange(uid, editData.email || '', newEmail)
+          toast.success('Employee updated. They can now log in with the new email.')
         }
         toast.success('Employee updated successfully')
       } else {
