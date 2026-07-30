@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle, HiUpload, HiTemplate, HiX } from 'react-icons/hi'
 import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument, invalidateStudentsCache } from '../../firebase/firestore'
 import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword } from '../../firebase/adminAuth'
+import { updateUserEmail } from '../../firebase/functions'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
 import { exportStudentsToExcel } from '../../utils/excelExport'
@@ -251,7 +252,16 @@ export default function Students() {
         ...customData,
       }
       if (editData) {
-        await updateStudentRecord(editData.uid || editData.id, data)
+        const uid = editData.uid || editData.id
+        await updateStudentRecord(uid, { ...data, email: form.email.trim() })
+        // If email changed, also update Firebase Auth login email via Cloud Function
+        if (form.email.trim() !== (editData.email || '').trim()) {
+          try {
+            await updateUserEmail(uid, form.email.trim())
+          } catch (fnErr) {
+            toast.error(`Record updated but login email change failed: ${fnErr.message}`)
+          }
+        }
         toast.success('Student updated successfully')
       } else {
         await createStudentAccount(form.email.trim(), form.password, data)
@@ -568,8 +578,10 @@ export default function Students() {
             </div>
           )}
           {editData && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs text-gray-500">
-              📧 Login: <strong className="text-gray-700 dark:text-gray-300">{form.email}</strong> — use 🔑 Reset Password to change it.
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
+              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Email / Login ID</p>
+              <TF label="Email Address" type="email" value={form.email} onChange={h('email')} placeholder="student@school.com" />
+              <p className="text-xs text-gray-400">Updating email here changes the contact email in records. For login email change, use Firebase Console.</p>
             </div>
           )}
 

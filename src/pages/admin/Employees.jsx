@@ -9,6 +9,7 @@ import {
   createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
   deactivateEmployee, activateEmployee, adminSetPassword,
 } from '../../firebase/adminAuth'
+import { updateUserEmail } from '../../firebase/functions'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, generateEmployeeId, formatCurrency, paginate } from '../../utils/helpers'
 import { exportEmployeesToExcel } from '../../utils/excelExport'
@@ -201,7 +202,16 @@ export default function Employees() {
         ...customData,
       }
       if (editData) {
-        await updateEmployeeRecord(editData.uid || editData.id, data)
+        const uid = editData.uid || editData.id
+        await updateEmployeeRecord(uid, { ...data, email: form.email.trim() })
+        // If email changed, also update Firebase Auth login email via Cloud Function
+        if (form.email.trim() !== (editData.email || '').trim()) {
+          try {
+            await updateUserEmail(uid, form.email.trim())
+          } catch (fnErr) {
+            toast.error(`Record updated but login email change failed: ${fnErr.message}`)
+          }
+        }
         toast.success('Employee updated successfully')
       } else {
         await createEmployeeAccount(form.email.trim(), form.password, data)
@@ -517,9 +527,10 @@ export default function Employees() {
             </div>
           )}
           {editData && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs text-gray-500">
-              📧 Email: <strong className="text-gray-700 dark:text-gray-300">{form.email}</strong>
-              — use <strong>🔑 Reset Password</strong> to change password.
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
+              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Email / Login ID</p>
+              <TextField label="Email Address" type="email" value={form.email} onChange={handleEmail} placeholder="employee@school.com" />
+              <p className="text-xs text-gray-400">Updating email here changes the contact email in records. For login email change, use Firebase Console.</p>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
