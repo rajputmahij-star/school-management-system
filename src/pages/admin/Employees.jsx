@@ -9,7 +9,6 @@ import {
   createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
   deactivateEmployee, activateEmployee, adminSetPassword,
 } from '../../firebase/adminAuth'
-import { updateUserEmail } from '../../firebase/functions'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, generateEmployeeId, formatCurrency, paginate } from '../../utils/helpers'
 import { exportEmployeesToExcel } from '../../utils/excelExport'
@@ -203,14 +202,15 @@ export default function Employees() {
       }
       if (editData) {
         const uid = editData.uid || editData.id
-        await updateEmployeeRecord(uid, { ...data, email: form.email.trim() })
-        // If email changed, also update Firebase Auth login email via Cloud Function
-        if (form.email.trim() !== (editData.email || '').trim()) {
-          try {
-            await updateUserEmail(uid, form.email.trim())
-          } catch (fnErr) {
-            toast.error(`Record updated but login email change failed: ${fnErr.message}`)
-          }
+        const newEmail = form.email.trim()
+        const emailChanged = newEmail !== (editData.email || '').trim()
+        await updateEmployeeRecord(uid, {
+          ...data,
+          email: newEmail,
+          ...(emailChanged ? { pendingEmail: newEmail } : {}),
+        })
+        if (emailChanged) {
+          toast.success('Employee updated. New login email will apply on their next login.')
         }
         toast.success('Employee updated successfully')
       } else {
@@ -530,7 +530,7 @@ export default function Employees() {
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
               <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Email / Login ID</p>
               <TextField label="Email Address" type="email" value={form.email} onChange={handleEmail} placeholder="employee@school.com" />
-              <p className="text-xs text-gray-400">Updating email here changes the contact email in records. For login email change, use Firebase Console.</p>
+              <p className="text-xs text-gray-400">The new email will become their login ID on their next login.</p>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
