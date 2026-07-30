@@ -258,7 +258,7 @@ export default function Students() {
         await updateStudentRecord(uid, {
           ...data,
           email: newEmail,
-          ...(emailChanged ? { pendingEmail: newEmail } : {}),
+          ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
         })
         if (emailChanged) {
           toast.success('Student updated. New login email will apply on their next login.')

@@ -207,7 +207,7 @@ export default function Employees() {
         await updateEmployeeRecord(uid, {
           ...data,
           email: newEmail,
-          ...(emailChanged ? { pendingEmail: newEmail } : {}),
+          ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
         })
         if (emailChanged) {
           toast.success('Employee updated. New login email will apply on their next login.')

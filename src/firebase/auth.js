@@ -10,9 +10,42 @@ import {
 import { doc, getDoc, updateDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './config'
 
+/**
+ * Try to find the current Auth email for a user who entered their pendingEmail.
+ * Searches students and employees collections for a doc where pendingEmail == enteredEmail.
+ * Returns the actual stored email (the one registered in Firebase Auth), or null.
+ */
+const findAuthEmailByPendingEmail = async (pendingEmail) => {
+  const collections = ['students', 'employees']
+  for (const col of collections) {
+    const q = query(collection(db, col), where('pendingEmail', '==', pendingEmail))
+    const snap = await getDocs(q)
+    if (!snap.empty) {
+      const data = snap.docs[0].data()
+      // Return the actual Firebase Auth email (stored as 'email' before pendingEmail was set)
+      // We stored oldEmail when setting pendingEmail
+      return data.oldEmail || null
+    }
+  }
+  return null
+}
+
 export const loginUser = async (email, password) => {
-  const userCredential = await signInWithEmailAndPassword(auth, email, password)
-  return userCredential.user
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password)
+    return userCredential.user
+  } catch (err) {
+    // If login fails, check if user entered their new (pending) email
+    if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
+      const oldEmail = await findAuthEmailByPendingEmail(email.trim())
+      if (oldEmail) {
+        // Log in with the old Firebase Auth email
+        const userCredential = await signInWithEmailAndPassword(auth, oldEmail, password)
+        return userCredential.user
+      }
+    }
+    throw err
+  }
 }
 
 export const logoutUser = async () => {
