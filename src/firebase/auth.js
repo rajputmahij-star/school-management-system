@@ -41,7 +41,23 @@ export const loginUser = async (email, password) => {
       if (oldEmail) {
         // Log in with the old Firebase Auth email
         const userCredential = await signInWithEmailAndPassword(auth, oldEmail, password)
-        return userCredential.user
+        const user = userCredential.user
+        // Immediately update Firebase Auth email to the new one so old email stops working
+        try {
+          await updateEmail(user, email.trim().toLowerCase())
+          // Mark the pending change as completed
+          const q2 = query(
+            collection(db, 'pending_email_changes'),
+            where('newEmail', '==', email.trim().toLowerCase())
+          )
+          const snap2 = await getDocs(q2)
+          snap2.forEach(async (d) => {
+            try { await updateDoc(d.ref, { completed: true }) } catch {}
+          })
+        } catch (updateErr) {
+          console.warn('Auth email update failed:', updateErr.message)
+        }
+        return user
       }
     }
     throw err
