@@ -902,7 +902,9 @@ export default function StudentFees() {
   // - Only extend into FUTURE months if the current month is already paid (allow advance)
   // - "Due" count only includes months ≤ today that are unpaid
   const allRows = useMemo(() => {
-    if (!userData || !baseFeePerMonth || !getFeeStartDate(userData)) return []
+    if (!userData) return []
+    // If no fee start date or no fee amount, still allow payment via modal
+    if (!baseFeePerMonth || !getFeeStartDate(userData)) return []
     const effectiveSettings = feeSettings || { defaultMonthlyDueDay: 5, defaultQuarterlyDueDay: 10 }
     const lateFeeBase   = settings?.lateFeeBase   || 250
     const lateFeePerDay = settings?.lateFeePerDay || 25
@@ -992,11 +994,10 @@ export default function StudentFees() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Fees</h1>
           <p className="text-sm text-gray-500 mt-0.5">View and submit fee payments</p>
         </div>
-        {allRows.length > 0 && (
-          <button onClick={() => setShowModal(true)} className="btn-primary text-sm">
-            <HiPaperAirplane className="w-4 h-4" /> Pay Fees
-          </button>
-        )}
+        {/* Always show Pay Fees button */}
+        <button onClick={() => setShowModal(true)} className="btn-primary text-sm">
+          <HiPaperAirplane className="w-4 h-4" /> Pay Fees
+        </button>
       </div>
 
       {/* Summary cards */}
@@ -1086,7 +1087,12 @@ export default function StudentFees() {
                 </tr>
               ))}
               {historyRows.length === 0 && (
-                <tr><td colSpan={6} className="table-cell text-center text-gray-400 py-12">No fee records found</td></tr>
+                <tr><td colSpan={6} className="table-cell text-center py-12">
+                  <div className="text-gray-400 space-y-1">
+                    <p className="font-medium">No fee records yet</p>
+                    <p className="text-xs">Click <strong className="text-primary-600">Pay Fees</strong> above to make your first payment</p>
+                  </div>
+                </td></tr>
               )}
             </tbody>
           </table>
