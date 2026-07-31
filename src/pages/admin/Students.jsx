@@ -345,23 +345,25 @@ export default function Students() {
     finally { setSaving(false) }
   }
 
-  // Reset student password to GR number (default)
+  // Reset student password to GR number (default) — padded to 6 chars with leading zeros
   const handleResetToDefault = async () => {
     const student = pwModal.student
-    const defaultPw = student.grNumber?.trim()
-    if (!defaultPw || defaultPw.length < 6) {
-      toast.error('GR Number must be at least 6 characters to use as password')
+    const rawGr = student.grNumber?.trim() || ''
+    // Pad with leading zeros to ensure minimum 6 characters e.g. "097" → "000097"
+    const defaultPw = rawGr.padStart(6, '0')
+    if (!rawGr) {
+      toast.error('No GR Number found for this student')
       return
     }
-    if (!window.confirm(`Reset "${student.studentName}" password to GR number "${defaultPw}"?`)) return
+    if (!window.confirm(`Reset "${student.studentName}" password to "${defaultPw}" (GR No. padded to 6 digits)?`)) return
     setSaving(true)
     try {
       await adminForceResetPassword(student.email, pwForm.current || defaultPw, defaultPw)
-      toast.success(`Password reset to GR number: ${defaultPw}`)
+      toast.success(`Password reset to: ${defaultPw}`)
       setPwModal({ open: false, student: null })
       setPwForm({ current: '', newPw: '', confirm: '' })
     } catch (err) {
-      toast.error(err.message || 'Reset failed — try entering current password manually')
+      toast.error(err.message || 'Reset failed — enter the current password and try again')
     } finally { setSaving(false) }
   }
 
@@ -1016,7 +1018,8 @@ export default function Students() {
               <p className="text-xs text-gray-500">{pwModal.student.email}</p>
               {pwModal.student.grNumber && (
                 <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                  Default password (GR No.): <strong>{pwModal.student.grNumber}</strong>
+                  Default password: <strong>{pwModal.student.grNumber.trim().padStart(6, '0')}</strong>
+                  <span className="text-gray-400 ml-1">(GR No. padded to 6 digits)</span>
                 </p>
               )}
             </div>
@@ -1026,7 +1029,7 @@ export default function Students() {
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
                 <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mb-2">Reset to Default Password</p>
                 <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
-                  Set password back to GR number: <strong>{pwModal.student.grNumber}</strong>
+                  New password will be: <strong className="text-lg">{pwModal.student.grNumber.trim().padStart(6, '0')}</strong>
                 </p>
                 <div className="mb-2">
                   <label className="label text-xs">Current Password (required)</label>
@@ -1041,7 +1044,7 @@ export default function Students() {
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
                 >
                   {saving ? <LoadingSpinner size="sm" /> : <HiKey className="w-4 h-4" />}
-                  Reset to GR No. ({pwModal.student.grNumber})
+                  Reset to "{pwModal.student.grNumber.trim().padStart(6, '0')}"
                 </button>
               </div>
             )}

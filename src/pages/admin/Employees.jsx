@@ -298,20 +298,22 @@ export default function Employees() {
   // Reset employee password to their Employee ID (default)
   const handleResetToDefault = async () => {
     const emp = pwModal.emp
-    const defaultPw = emp.employeeId?.trim()
-    if (!defaultPw || defaultPw.length < 6) {
-      toast.error('Employee ID must be at least 6 characters to use as password')
+    const rawId = emp.employeeId?.trim() || ''
+    // Pad with leading zeros to ensure minimum 6 characters
+    const defaultPw = rawId.padStart(6, '0')
+    if (!rawId) {
+      toast.error('No Employee ID found for this employee')
       return
     }
-    if (!window.confirm(`Reset "${emp.employeeName}" password to Employee ID "${defaultPw}"?`)) return
+    if (!window.confirm(`Reset "${emp.employeeName}" password to "${defaultPw}"?`)) return
     setSaving(true)
     try {
       await adminForceResetPassword(emp.email, pwForm.current || defaultPw, defaultPw)
-      toast.success(`Password reset to Employee ID: ${defaultPw}`)
+      toast.success(`Password reset to: ${defaultPw}`)
       setPwModal({ open: false, emp: null })
       setPwForm({ current: '', newPw: '', confirm: '' })
     } catch (err) {
-      toast.error(err.message || 'Reset failed — try entering current password manually')
+      toast.error(err.message || 'Reset failed — enter the current password and try again')
     } finally { setSaving(false) }
   }
 
