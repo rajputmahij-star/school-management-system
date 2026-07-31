@@ -237,11 +237,14 @@ const migrateSchedule = (raw) => {
 export default function TimetableView({ className, canEdit = false }) {
   const [timetable, setTimetable] = useState(null)
   const [draft,     setDraft]     = useState(null)
+  const [slots,     setSlots]     = useState(TIME_SLOTS)      // active slot list
+  const [draftSlots,setDraftSlots]= useState(TIME_SLOTS)      // editable copy
   const [editMode,  setEditMode]  = useState(false)
   const [editing,   setEditing]   = useState(null)
   const [loading,   setLoading]   = useState(true)
   const [saving,    setSaving]    = useState(false)
   const [dirty,     setDirty]     = useState(false)
+  const [showRowMgr,setShowRowMgr]= useState(false)           // row manager panel
 
   useEffect(() => {
     if (!className) { setLoading(false); return }
@@ -256,44 +259,84 @@ export default function TimetableView({ className, canEdit = false }) {
       const migrated = migrateSchedule(raw)
       setTimetable(migrated)
       setDraft(JSON.parse(JSON.stringify(migrated)))
+      // Load custom slots if saved, else use defaults
+      const saved = data?.customSlots
+      const activeSlots = (saved && saved.length > 0) ? saved : TIME_SLOTS
+      setSlots(activeSlots)
+      setDraftSlots(JSON.parse(JSON.stringify(activeSlots)))
       setDirty(false)
     } catch (err) {
       toast.error('Failed to load timetable')
     } finally { setLoading(false) }
   }
 
-  // Get month and year for display
   const getMonthYear = () => {
     const now = new Date()
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
-                        'July', 'August', 'September', 'October', 'November', 'December']
+    const monthNames = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December']
     return `${monthNames[now.getMonth()]} ${now.getFullYear()}`
   }
 
-  // Get last updated date if available
-  const getLastUpdated = () => {
-    // This would come from timetable data if it has updatedAt field
-    // For now, show current date
-    const now = new Date()
-    return now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-  }
+  const getLastUpdated = () => new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
 
   const startEdit  = () => { setEditMode(true); setDirty(false) }
   const cancelEdit = () => {
     setDraft(JSON.parse(JSON.stringify(timetable)))
-    setEditMode(false); setEditing(null); setDirty(false)
+    setDraftSlots(JSON.parse(JSON.stringify(slots)))
+    setEditMode(false); setEditing(null); setDirty(false); setShowRowMgr(false)
   }
 
   const handleSaveAll = async () => {
     setSaving(true)
     try {
-      await saveTimetable(className, { schedule: draft })
+      await saveTimetable(className, { schedule: draft, customSlots: draftSlots })
       setTimetable(JSON.parse(JSON.stringify(draft)))
-      setEditMode(false); setEditing(null); setDirty(false)
+      setSlots(JSON.parse(JSON.stringify(draftSlots)))
+      setEditMode(false); setEditing(null); setDirty(false); setShowRowMgr(false)
       toast.success('Timetable saved!')
     } catch (err) {
       toast.error('Failed to save: ' + err.message)
     } finally { setSaving(false) }
+  }
+
+  // ── Row management helpers ────────────────────────────────────────────────
+  const addRow = () => {
+    const newId = `slot-${Date.now()}`
+    setDraftSlots((prev) => [...prev, { id: newId, label: 'New Time Slot' }])
+    setDirty(true)
+  }
+
+  const removeRow = (id) => {
+    if (draftSlots.length <= 1) { toast.error('At least one row is required'); return }
+    setDraftSlots((prev) => prev.filter((s) => s.id !== id))
+    // Also remove from draft schedule
+    setDraft((prev) => {
+      const next = { ...prev }
+      DAYS.forEach((day) => {
+        if (next[day]) {
+          const { [id]: _, ...rest } = next[day]
+          next[day] = rest
+        }
+      })
+      return next
+    })
+    setDirty(true)
+  }
+
+  const updateSlotLabel = (id, label) => {
+    setDraftSlots((prev) => prev.map((s) => s.id === id ? { ...s, label } : s))
+    setDirty(true)
+  }
+
+  const moveRow = (idx, dir) => {
+    setDraftSlots((prev) => {
+      const next = [...prev]
+      const target = idx + dir
+      if (target < 0 || target >= next.length) return prev
+      ;[next[idx], next[target]] = [next[target], next[idx]]
+      return next
+    })
+    setDirty(true)
   }
 
   const openCellEditor = (day, slotId, slotLabel) => {
@@ -320,7 +363,8 @@ export default function TimetableView({ className, canEdit = false }) {
 
   if (loading) return <div className="flex justify-center p-12"><LoadingSpinner size="lg" /></div>
 
-  const current = editMode ? draft : timetable
+  const current      = editMode ? draft : timetable
+  const activeSlots  = editMode ? draftSlots : slots
 
   return (
     <div className="space-y-3">
@@ -340,7 +384,7 @@ export default function TimetableView({ className, canEdit = false }) {
           <button onClick={() => window.print()} className="btn-secondary text-sm">
             <HiPrinter className="w-4 h-4" /> Print
           </button>
-          <button onClick={() => downloadTimetablePDF(className, timetable)} className="btn-secondary text-sm">
+          <button onClick={() => downloadTimetablePDF(className, timetable, slots)} className="btn-secondary text-sm">
             <HiDownload className="w-4 h-4" /> PDF
           </button>
           {canEdit && !editMode && (
@@ -350,6 +394,10 @@ export default function TimetableView({ className, canEdit = false }) {
           )}
           {canEdit && editMode && (
             <>
+              <button onClick={() => setShowRowMgr((v) => !v)}
+                className={`text-sm flex items-center gap-1.5 px-3 py-2 rounded-xl font-medium border-2 transition-colors ${showRowMgr ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300' : 'btn-secondary'}`}>
+                ⊞ Manage Rows
+              </button>
               <button onClick={cancelEdit} className="btn-secondary text-sm">
                 <HiX className="w-4 h-4" /> Cancel
               </button>
@@ -362,11 +410,54 @@ export default function TimetableView({ className, canEdit = false }) {
         </div>
       </div>
 
-      {/* Edit hint banner */}
+      {/* Edit hint */}
       {editMode && (
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-400 no-print">
           <HiPencil className="w-4 h-4 flex-shrink-0" />
-          Click any cell to edit text, formatting and colours. Press <strong className="mx-1">Save All</strong> when done.
+          Click any cell to edit. Use <strong className="mx-1">Manage Rows</strong> to add/remove rows or edit time labels.
+        </div>
+      )}
+
+      {/* ── Row Manager Panel ── */}
+      {editMode && showRowMgr && (
+        <div className="card p-4 border-2 border-indigo-200 dark:border-indigo-800 no-print space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Manage Time Rows</h3>
+            <button onClick={addRow}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors">
+              + Add Row
+            </button>
+          </div>
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {draftSlots.map((slot, idx) => (
+              <div key={slot.id} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2">
+                {/* Move up/down */}
+                <div className="flex flex-col gap-0.5">
+                  <button type="button" onClick={() => moveRow(idx, -1)} disabled={idx === 0}
+                    className="text-gray-400 hover:text-gray-600 disabled:opacity-20 leading-none text-xs">▲</button>
+                  <button type="button" onClick={() => moveRow(idx, 1)} disabled={idx === draftSlots.length - 1}
+                    className="text-gray-400 hover:text-gray-600 disabled:opacity-20 leading-none text-xs">▼</button>
+                </div>
+                {/* Row number */}
+                <span className="text-xs font-bold text-gray-400 w-5 text-center flex-shrink-0">{idx + 1}</span>
+                {/* Time label input */}
+                <input
+                  type="text"
+                  value={slot.label}
+                  onChange={(e) => updateSlotLabel(slot.id, e.target.value)}
+                  className="input-field text-xs py-1.5 flex-1"
+                  placeholder="e.g. 10:00 – 10:30"
+                />
+                {/* Delete */}
+                <button type="button" onClick={() => removeRow(slot.id)}
+                  className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
+                  title="Remove row">
+                  <HiX className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400">Changes apply when you click Save All.</p>
         </div>
       )}
 
@@ -379,17 +470,26 @@ export default function TimetableView({ className, canEdit = false }) {
           </colgroup>
 
           <thead>
-            {/* School banner */}
             <tr>
-              <td colSpan={6} className="text-center py-3 px-4"
+              <td colSpan={6} className="text-center py-2 px-4"
                 style={{ background: 'linear-gradient(135deg, #16377A 0%, #1e4da1 100%)' }}>
-                <p className="text-white font-bold text-base sm:text-lg tracking-wide">ANAND SPECIAL SCHOOL</p>
-                <p className="text-blue-200 text-xs font-medium mt-0.5">(Mngd. By Anand Rehabilitation Trust)</p>
-                <p className="text-blue-300 text-xs font-medium mt-0.5">TIME TABLE — {className.toUpperCase()}</p>
-                <p className="text-blue-200 text-[10px] font-medium mt-1">{getMonthYear()} • Last Updated: {getLastUpdated()}</p>
+                <div className="flex items-center justify-between">
+                  {/* Trust logo — left */}
+                  <img src="/Trust Logo.avif" alt="Trust"
+                    className="w-12 h-12 object-contain rounded-lg flex-shrink-0" />
+                  {/* Center text */}
+                  <div className="flex-1 text-center px-2">
+                    <p className="text-white font-bold text-base sm:text-lg tracking-wide">ANAND SPECIAL SCHOOL</p>
+                    <p className="text-blue-200 text-xs font-medium mt-0.5">(Mngd. By Anand Rehabilitation Trust)</p>
+                    <p className="text-blue-300 text-xs font-medium mt-0.5">TIME TABLE — {className.toUpperCase()}</p>
+                    <p className="text-blue-200 text-[10px] font-medium mt-0.5">{getMonthYear()} • Last Updated: {getLastUpdated()}</p>
+                  </div>
+                  {/* School logo — right */}
+                  <img src="/image.png" alt="School"
+                    className="w-12 h-12 object-contain rounded-lg flex-shrink-0" />
+                </div>
               </td>
             </tr>
-            {/* Day headers */}
             <tr>
               <th className="border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-center text-xs font-bold text-gray-600 dark:text-gray-300 p-2">
                 TIME
@@ -408,50 +508,34 @@ export default function TimetableView({ className, canEdit = false }) {
           </thead>
 
           <tbody>
-            {TIME_SLOTS.map((slot, si) => (
+            {activeSlots.map((slot, si) => (
               <tr key={slot.id}>
-                {/* Time column */}
                 <td className="border border-gray-200 dark:border-gray-700 p-2 text-center align-middle bg-gray-50 dark:bg-gray-800/80">
                   <span className="text-[11px] font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap leading-tight block">
                     {slot.label}
                   </span>
                 </td>
-
-                {/* Day cells */}
                 {DAYS.map((day) => {
-                  const raw    = current?.[day]?.[slot.id]
-                  const cell   = toCell(raw)
+                  const raw   = current?.[day]?.[slot.id]
+                  const cell  = toCell(raw)
                   const isEmpty = !cell.text.trim()
                   const { bg } = DAY_COLORS[day]
-
-                  // Base background: alternate rows, overridden by cell.bgColor
                   const baseBg = si % 2 === 0 ? undefined : 'rgba(0,0,0,0.02)'
                   const bg2    = cell.bgColor || baseBg
-
                   return (
-                    <td
-                      key={day}
+                    <td key={day}
                       onClick={() => openCellEditor(day, slot.id, slot.label)}
                       className={`border border-gray-200 dark:border-gray-700 p-0 align-top transition-all ${
                         editMode ? 'cursor-pointer hover:ring-2 hover:ring-inset hover:ring-blue-400' : ''
                       }`}
-                      style={{ borderLeft: `3px solid ${bg}`, overflow: 'hidden' }}
-                    >
-                      <div
-                        className="px-2 py-2 min-h-[52px] text-[11px] leading-snug whitespace-pre-wrap break-words"
-                        style={{
-                          ...cellStyle(cell),
-                          backgroundColor: bg2,
-                          wordBreak: 'break-word',
-                          overflowWrap: 'break-word',
-                        }}
-                      >
+                      style={{ borderLeft: `3px solid ${bg}`, overflow: 'hidden' }}>
+                      <div className="px-2 py-2 min-h-[52px] text-[11px] leading-snug whitespace-pre-wrap break-words"
+                        style={{ ...cellStyle(cell), backgroundColor: bg2, wordBreak:'break-word', overflowWrap:'break-word' }}>
                         {isEmpty
                           ? editMode
-                            ? <span className="text-gray-300 dark:text-gray-600 text-[10px] italic not-italic font-normal" style={{ fontWeight:'normal', fontStyle:'italic', textDecoration:'none', color: '#9ca3af' }}>Click to edit…</span>
+                            ? <span style={{ fontWeight:'normal', fontStyle:'italic', textDecoration:'none', color:'#9ca3af' }}>Click to edit…</span>
                             : <span className="text-gray-200 dark:text-gray-700 text-[10px]">—</span>
-                          : cell.text
-                        }
+                          : cell.text}
                       </div>
                     </td>
                   )
@@ -473,7 +557,6 @@ export default function TimetableView({ className, canEdit = false }) {
         </table>
       </div>
 
-      {/* Cell editor modal */}
       {editing && (
         <CellEditor
           cellData={draft?.[editing.day]?.[editing.slotId]}
@@ -487,109 +570,20 @@ export default function TimetableView({ className, canEdit = false }) {
 
       <style>{`
         @media print {
-          /* Hide non-print elements */
-          .no-print,
-          button,
-          .btn-primary,
-          .btn-secondary {
-            display: none !important;
-          }
-          
-          /* Ensure colors and formatting are preserved */
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color-adjust: exact !important;
-          }
-          
-          /* Show the print area */
-          .print-area {
-            display: block !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-          }
-          
-          /* Preserve table structure and fit to one page */
-          table {
-            page-break-inside: avoid !important;
-            border-collapse: collapse !important;
-            width: 100% !important;
-            font-size: 7px !important;
-          }
-          
-          /* Reduce header size */
-          thead td {
-            padding: 4px !important;
-          }
-          
-          thead td p {
-            margin: 1px 0 !important;
-            font-size: 10px !important;
-          }
-          
-          thead td p:first-child {
-            font-size: 12px !important;
-          }
-          
-          /* Reduce cell padding */
-          td, th {
-            padding: 3px !important;
-            font-size: 7px !important;
-            line-height: 1.2 !important;
-          }
-          
-          /* Reduce cell content size */
-          td > div {
-            padding: 2px 3px !important;
-            min-height: 32px !important;
-            font-size: 7px !important;
-            line-height: 1.3 !important;
-          }
-          
-          /* Reduce time column */
-          th:first-child,
-          td:first-child {
-            font-size: 7px !important;
-          }
-          
-          /* Reduce footer */
-          tfoot td {
-            padding: 3px !important;
-          }
-          
-          tfoot span {
-            font-size: 8px !important;
-          }
-          
-          tr {
-            page-break-inside: avoid;
-            page-break-after: auto;
-          }
-          
-          /* Print margins - minimal to fit on one page */
-          @page {
-            margin: 0.3cm;
-            size: landscape;
-          }
-          
-          /* Remove hover effects */
-          .hover\\:ring-2,
-          .hover\\:ring-inset,
-          .hover\\:ring-blue-400 {
-            box-shadow: none !important;
-          }
-          
-          /* Remove cursor pointer in print */
-          * {
-            cursor: default !important;
-          }
-          
-          /* Remove rounded corners and shadows for print */
-          .rounded-2xl {
-            border-radius: 0 !important;
-          }
+          .no-print, button, .btn-primary, .btn-secondary { display: none !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .print-area { display: block !important; margin: 0 !important; border: none !important; box-shadow: none !important; }
+          table { page-break-inside: avoid !important; border-collapse: collapse !important; width: 100% !important; font-size: 7px !important; }
+          thead td { padding: 4px !important; }
+          thead td p { margin: 1px 0 !important; font-size: 10px !important; }
+          thead td p:first-child { font-size: 12px !important; }
+          td, th { padding: 3px !important; font-size: 7px !important; line-height: 1.2 !important; }
+          td > div { padding: 2px 3px !important; min-height: 32px !important; font-size: 7px !important; line-height: 1.3 !important; }
+          tfoot td { padding: 3px !important; }
+          tfoot span { font-size: 8px !important; }
+          tr { page-break-inside: avoid; }
+          .rounded-2xl { border-radius: 0 !important; }
+          @page { margin: 0.3cm; size: landscape; }
         }
       `}</style>
     </div>

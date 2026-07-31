@@ -144,7 +144,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ─── Student Leave Notifications ─────────────────────────────────────────
+    // ─── Pending Email Changes ────────────────────────────────────────────────────
+    // Lightweight collection for email migration — readable without auth
+    match /pending_email_changes/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
     // Students submit; admin and employees (class teachers) can read
     match /student_leaves/{docId} {
       allow read: if isAdmin() || isEmployee() ||

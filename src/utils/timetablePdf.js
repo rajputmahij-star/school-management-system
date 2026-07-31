@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { DAYS, TIME_SLOTS, DEFAULT_TIMETABLE } from '../pages/shared/timetableConfig'
+import { loadPdfLogos } from './pdfLogos'
 
 // Helper to normalize cell data (handle both legacy strings and rich objects)
 const toCell = (v) => {
@@ -31,7 +32,11 @@ const hexToRgb = (hex) => {
   return null
 }
 
-export const downloadTimetablePDF = (className, timetable) => {
+export const downloadTimetablePDF = async (className, timetable, customSlots) => {
+  // Use customSlots if provided, otherwise fall back to default TIME_SLOTS
+  const activeSlots = (customSlots && customSlots.length > 0) ? customSlots : TIME_SLOTS
+  const logos = await loadPdfLogos()
+
   const doc = new jsPDF({ orientation: 'landscape', format: 'a4' })
   const W = doc.internal.pageSize.width
   const H = doc.internal.pageSize.height
@@ -43,36 +48,46 @@ export const downloadTimetablePDF = (className, timetable) => {
   const monthYear = `${monthNames[now.getMonth()]} ${now.getFullYear()}`
   const lastUpdated = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
-  // Header with gradient-like blue
+  // Header background
   doc.setFillColor(22, 55, 122) // #16377A
-  doc.rect(0, 0, W, 20, 'F')
+  doc.rect(0, 0, W, 22, 'F')
+
+  // Trust logo — top left corner
+  if (logos.trustLogo) {
+    try { doc.addImage(logos.trustLogo, 'PNG', 3, 1, 18, 18) } catch {}
+  }
+
+  // School logo — top right corner
+  if (logos.schoolLogo) {
+    try { doc.addImage(logos.schoolLogo, 'PNG', W - 21, 1, 18, 18) } catch {}
+  }
+
+  // School name + info — centered
   doc.setTextColor(255, 255, 255)
-  doc.setFontSize(14)
+  doc.setFontSize(13)
   doc.setFont('helvetica', 'bold')
-  doc.text('ANAND SPECIAL SCHOOL', W / 2, 6, { align: 'center' })
-  doc.setFontSize(8)
+  doc.text('ANAND SPECIAL SCHOOL', W / 2, 7, { align: 'center' })
+  doc.setFontSize(7.5)
   doc.setFont('helvetica', 'normal')
-  doc.text('(Mngd. By Anand Rehabilitation Trust)', W / 2, 10, { align: 'center' })
-  doc.setFontSize(9)
+  doc.text('(Mngd. By Anand Rehabilitation Trust)', W / 2, 11.5, { align: 'center' })
+  doc.setFontSize(8.5)
   doc.setFont('helvetica', 'bold')
-  doc.text(`TIME TABLE — ${className.toUpperCase()}`, W / 2, 14, { align: 'center' })
-  doc.setFontSize(7)
+  doc.text(`TIME TABLE — ${className.toUpperCase()}`, W / 2, 16, { align: 'center' })
+  doc.setFontSize(6.5)
   doc.setFont('helvetica', 'normal')
-  doc.text(`${monthYear} • Last Updated: ${lastUpdated}`, W / 2, 18, { align: 'center' })
+  doc.text(`${monthYear} • Last Updated: ${lastUpdated}`, W / 2, 20, { align: 'center' })
   doc.setTextColor(0, 0, 0)
 
   const head = [['TIME', ...DAYS]]
   
   // Store cell data with formatting info
   const cellData = {}
-  const body = TIME_SLOTS.map((slot, rowIndex) => {
+  const body = activeSlots.map((slot, rowIndex) => {
     const row = [slot.label]
     DAYS.forEach((day, colIndex) => {
       const rawCell = timetable?.[day]?.[slot.id]
       const cell = toCell(rawCell)
       row.push(cell.text || '')
-      
-      // Store formatting data for later use
       cellData[`${rowIndex}-${colIndex + 1}`] = cell
     })
     return row
@@ -87,7 +102,7 @@ export const downloadTimetablePDF = (className, timetable) => {
   }
 
   autoTable(doc, {
-    startY: 24,
+    startY: 26,
     head,
     body,
     styles: { 

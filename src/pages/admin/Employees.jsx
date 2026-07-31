@@ -4,7 +4,7 @@ import {
   HiDownload, HiKey, HiUserRemove, HiUserAdd,
   HiUpload, HiTemplate, HiCheckCircle, HiExclamation,
 } from 'react-icons/hi'
-import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument } from '../../firebase/firestore'
+import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument, savePendingEmailChange } from '../../firebase/firestore'
 import {
   createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
   deactivateEmployee, activateEmployee, adminSetPassword,
@@ -201,7 +201,18 @@ export default function Employees() {
         ...customData,
       }
       if (editData) {
-        await updateEmployeeRecord(editData.uid || editData.id, data)
+        const uid = editData.uid || editData.id
+        const newEmail = form.email.trim()
+        const emailChanged = newEmail !== (editData.email || '').trim()
+        await updateEmployeeRecord(uid, {
+          ...data,
+          email: newEmail,
+          ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
+        })
+        if (emailChanged) {
+          await savePendingEmailChange(uid, editData.email || '', newEmail)
+          toast.success('Employee updated. They can now log in with the new email.')
+        }
         toast.success('Employee updated successfully')
       } else {
         await createEmployeeAccount(form.email.trim(), form.password, data)
@@ -517,9 +528,10 @@ export default function Employees() {
             </div>
           )}
           {editData && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs text-gray-500">
-              📧 Email: <strong className="text-gray-700 dark:text-gray-300">{form.email}</strong>
-              — use <strong>🔑 Reset Password</strong> to change password.
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
+              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Email / Login ID</p>
+              <TextField label="Email Address" type="email" value={form.email} onChange={handleEmail} placeholder="employee@school.com" />
+              <p className="text-xs text-gray-400">The new email will become their login ID on their next login.</p>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

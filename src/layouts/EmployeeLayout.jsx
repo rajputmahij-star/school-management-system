@@ -80,40 +80,29 @@ export default function EmployeeLayout() {
       </aside>
 
       <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-10 border-b border-green-900 shadow-md"
-          style={{ background: 'linear-gradient(90deg, #16377A 0%, #1e4da1 100%)' }}>
+        <header className="sticky top-0 z-10 border-b border-gray-200 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900">
           <div className="px-4 py-2 flex items-center justify-between">
-            {/* Mobile menu button */}
             <button onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-xl hover:bg-white/10 transition-colors flex-shrink-0">
-              <HiMenu className="w-5 h-5 text-white" />
+              className="lg:hidden p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex-shrink-0">
+              <HiMenu className="w-5 h-5 text-gray-700 dark:text-gray-300" />
             </button>
-
-            {/* School branding */}
             <div className="flex items-center gap-2 sm:gap-3 flex-1 justify-center">
-              <img src="/Trust Logo.avif" alt="Trust"
-                className="w-7 h-7 sm:w-12 sm:h-12 object-contain rounded-lg flex-shrink-0" />
-              <img src="/image.png" alt="School"
-                className="w-7 h-7 sm:w-12 sm:h-12 object-contain rounded-lg flex-shrink-0" />
+              <img src="/Trust Logo.avif" alt="Trust" className="w-7 h-7 sm:w-12 sm:h-12 object-contain rounded-lg flex-shrink-0" />
+              <img src="/image.png" alt="School" className="w-7 h-7 sm:w-12 sm:h-12 object-contain rounded-lg flex-shrink-0" />
               <div className="text-center">
-                <p className="font-school font-bold text-orange-400 leading-tight uppercase tracking-wide"
-                  style={{ fontSize: 'clamp(11px, 3.5vw, 24px)' }}>
+                <p className="font-school font-bold leading-tight uppercase tracking-wide"
+                  style={{ fontSize: 'clamp(11px, 3.5vw, 24px)', color: '#E86E07' }}>
                   ANAND SPECIAL SCHOOL
                 </p>
-                <p className="font-school text-blue-200 leading-tight"
-                  style={{ fontSize: 'clamp(8px, 2.2vw, 15px)' }}>
+                <p className="font-school leading-tight"
+                  style={{ fontSize: 'clamp(8px, 2.2vw, 15px)', color: '#16377A' }}>
                   Mngd. by Anand Rehabilitation Trust
                 </p>
               </div>
             </div>
-
-            {/* Right actions */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <button onClick={toggleTheme}
-                className="p-2 rounded-xl hover:bg-white/10 transition-colors">
-                {theme === 'dark'
-                  ? <HiSun className="w-5 h-5 text-yellow-300" />
-                  : <HiMoon className="w-5 h-5 text-blue-200" />}
+              <button onClick={toggleTheme} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                {theme === 'dark' ? <HiSun className="w-5 h-5 text-yellow-400" /> : <HiMoon className="w-5 h-5 text-gray-600" />}
               </button>
             </div>
           </div>
