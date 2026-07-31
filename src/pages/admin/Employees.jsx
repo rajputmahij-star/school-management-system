@@ -419,7 +419,9 @@ export default function Employees() {
         <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input type="text" placeholder="Search name, ID, designation, email…"
           value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          className="input-field pl-9" />
+          className="input-field pl-9"
+          autoComplete="off"
+          name="employee-search" />
       </div>
 
       {/* Filter pills — Active and Left only */}
@@ -684,7 +686,8 @@ export default function Employees() {
                   <label className="label text-xs">Current Password (required)</label>
                   <input type="password" value={pwForm.current}
                     onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
-                    className="input-field" placeholder="Employee's current password" />
+                    className="input-field" placeholder="Employee's current password"
+                    autoComplete="new-password" />
                 </div>
                 <button
                   type="button"
@@ -700,24 +703,27 @@ export default function Employees() {
 
             <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
               <p className="text-xs text-gray-500 mb-3">Or set a custom password:</p>
-              <form onSubmit={handleResetPw} className="space-y-3">
+              <form onSubmit={handleResetPw} className="space-y-3" autoComplete="off">
                 <div>
                   <label className="label">Current Password</label>
                   <input type="password" value={pwForm.current}
                     onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
-                    className="input-field" placeholder="Employee's current password" />
+                    className="input-field" placeholder="Employee's current password"
+                    autoComplete="new-password" />
                 </div>
                 <div>
                   <label className="label">New Password</label>
                   <input type="password" value={pwForm.newPw}
                     onChange={(e) => setPwForm((p) => ({ ...p, newPw: e.target.value }))}
-                    className="input-field" minLength={6} placeholder="Min 6 characters" />
+                    className="input-field" minLength={6} placeholder="Min 6 characters"
+                    autoComplete="new-password" />
                 </div>
                 <div>
                   <label className="label">Confirm New Password</label>
                   <input type="password" value={pwForm.confirm}
                     onChange={(e) => setPwForm((p) => ({ ...p, confirm: e.target.value }))}
-                    className="input-field" placeholder="Repeat new password" />
+                    className="input-field" placeholder="Repeat new password"
+                    autoComplete="new-password" />
                 </div>
                 <div className="flex justify-end gap-3">
                   <button type="button" onClick={() => { setPwModal({ open: false, emp: null }); setPwForm({ current: '', newPw: '', confirm: '' }) }} className="btn-secondary">Cancel</button>

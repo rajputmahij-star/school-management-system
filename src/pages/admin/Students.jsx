@@ -472,7 +472,9 @@ export default function Students() {
         <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input type="text" placeholder="Search name, ID, GR, class, email…"
           value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          className="input-field pl-9" />
+          className="input-field pl-9"
+          autoComplete="off"
+          name="student-search" />
       </div>
 
       {/* Status filter pills */}
@@ -1035,7 +1037,8 @@ export default function Students() {
                   <label className="label text-xs">Current Password (required)</label>
                   <input type="password" value={pwForm.current}
                     onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
-                    className="input-field" placeholder="Student's current password" />
+                    className="input-field" placeholder="Student's current password"
+                    autoComplete="new-password" />
                 </div>
                 <button
                   type="button"
@@ -1051,12 +1054,12 @@ export default function Students() {
 
             <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
               <p className="text-xs text-gray-500 mb-3">Or set a custom password:</p>
-              <form onSubmit={handleResetPw} className="space-y-3">
+              <form onSubmit={handleResetPw} className="space-y-3" autoComplete="off">
                 {[['Current Password', 'current', "Student's current password"], ['New Password', 'newPw', 'Min 6 characters'], ['Confirm New Password', 'confirm', 'Repeat new password']].map(([label, key, ph]) => (
                   <div key={key}>
                     <label className="label">{label}</label>
                     <input type="password" value={pwForm[key]} onChange={(e) => setPwForm((p) => ({ ...p, [key]: e.target.value }))}
-                      className="input-field" placeholder={ph} />
+                      className="input-field" placeholder={ph} autoComplete="new-password" />
                   </div>
                 ))}
                 <div className="flex justify-end gap-3">
