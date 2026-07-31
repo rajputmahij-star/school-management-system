@@ -5,9 +5,8 @@ import {
   HiUpload, HiTemplate, HiCheckCircle, HiExclamation,
 } from 'react-icons/hi'
 import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument, savePendingEmailChange } from '../../firebase/firestore'
-import {
-  createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
-  deactivateEmployee, activateEmployee, adminSetPassword,
+import { createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
+  deactivateEmployee, activateEmployee, adminSetPassword, adminForceResetPassword,
 } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, generateEmployeeId, formatCurrency, paginate } from '../../utils/helpers'
@@ -293,6 +292,26 @@ export default function Employees() {
       setPwForm({ current: '', newPw: '', confirm: '' })
     } catch (err) {
       toast.error(err.message || 'Reset failed')
+    } finally { setSaving(false) }
+  }
+
+  // Reset employee password to their Employee ID (default)
+  const handleResetToDefault = async () => {
+    const emp = pwModal.emp
+    const defaultPw = emp.employeeId?.trim()
+    if (!defaultPw || defaultPw.length < 6) {
+      toast.error('Employee ID must be at least 6 characters to use as password')
+      return
+    }
+    if (!window.confirm(`Reset "${emp.employeeName}" password to Employee ID "${defaultPw}"?`)) return
+    setSaving(true)
+    try {
+      await adminForceResetPassword(emp.email, pwForm.current || defaultPw, defaultPw)
+      toast.success(`Password reset to Employee ID: ${defaultPw}`)
+      setPwModal({ open: false, emp: null })
+      setPwForm({ current: '', newPw: '', confirm: '' })
+    } catch (err) {
+      toast.error(err.message || 'Reset failed — try entering current password manually')
     } finally { setSaving(false) }
   }
 
@@ -641,36 +660,72 @@ export default function Employees() {
       <Modal isOpen={pwModal.open} onClose={() => !saving && setPwModal({ open: false, emp: null })}
         title="Reset Employee Password" size="sm">
         {pwModal.emp && (
-          <form onSubmit={handleResetPw} className="space-y-4">
+          <div className="space-y-4">
             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <p className="text-sm font-medium text-gray-900 dark:text-white">{pwModal.emp.employeeName}</p>
               <p className="text-xs text-gray-500">{pwModal.emp.email}</p>
+              {pwModal.emp.employeeId && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  Default password (Employee ID): <strong>{pwModal.emp.employeeId}</strong>
+                </p>
+              )}
             </div>
-            <div>
-              <label className="label">Current Password</label>
-              <input type="password" value={pwForm.current}
-                onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
-                className="input-field" required placeholder="Employee's current password" />
+
+            {/* Quick reset to Employee ID */}
+            {pwModal.emp.employeeId && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
+                <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mb-1">Reset to Default Password</p>
+                <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+                  Set password back to Employee ID: <strong>{pwModal.emp.employeeId}</strong>
+                </p>
+                <div className="mb-2">
+                  <label className="label text-xs">Current Password (required)</label>
+                  <input type="password" value={pwForm.current}
+                    onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
+                    className="input-field" placeholder="Employee's current password" />
+                </div>
+                <button
+                  type="button"
+                  disabled={saving || !pwForm.current}
+                  onClick={handleResetToDefault}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
+                >
+                  {saving ? <LoadingSpinner size="sm" /> : <HiKey className="w-4 h-4" />}
+                  Reset to Employee ID ({pwModal.emp.employeeId})
+                </button>
+              </div>
+            )}
+
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+              <p className="text-xs text-gray-500 mb-3">Or set a custom password:</p>
+              <form onSubmit={handleResetPw} className="space-y-3">
+                <div>
+                  <label className="label">Current Password</label>
+                  <input type="password" value={pwForm.current}
+                    onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
+                    className="input-field" placeholder="Employee's current password" />
+                </div>
+                <div>
+                  <label className="label">New Password</label>
+                  <input type="password" value={pwForm.newPw}
+                    onChange={(e) => setPwForm((p) => ({ ...p, newPw: e.target.value }))}
+                    className="input-field" minLength={6} placeholder="Min 6 characters" />
+                </div>
+                <div>
+                  <label className="label">Confirm New Password</label>
+                  <input type="password" value={pwForm.confirm}
+                    onChange={(e) => setPwForm((p) => ({ ...p, confirm: e.target.value }))}
+                    className="input-field" placeholder="Repeat new password" />
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => { setPwModal({ open: false, emp: null }); setPwForm({ current: '', newPw: '', confirm: '' }) }} className="btn-secondary">Cancel</button>
+                  <button type="submit" disabled={saving} className="btn-primary">
+                    {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Set Custom Password</>}
+                  </button>
+                </div>
+              </form>
             </div>
-            <div>
-              <label className="label">New Password</label>
-              <input type="password" value={pwForm.newPw}
-                onChange={(e) => setPwForm((p) => ({ ...p, newPw: e.target.value }))}
-                className="input-field" required minLength={6} placeholder="Min 6 characters" />
-            </div>
-            <div>
-              <label className="label">Confirm New Password</label>
-              <input type="password" value={pwForm.confirm}
-                onChange={(e) => setPwForm((p) => ({ ...p, confirm: e.target.value }))}
-                className="input-field" required placeholder="Repeat new password" />
-            </div>
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={() => setPwModal({ open: false, emp: null })} className="btn-secondary">Cancel</button>
-              <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Reset Password</>}
-              </button>
-            </div>
-          </form>
+          </div>
         )}
       </Modal>
 

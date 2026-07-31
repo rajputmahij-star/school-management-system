@@ -89,9 +89,28 @@ export const createEmployeeAccount = async (email, password, employeeData) => {
   return uid
 }
 
-// ─── Admin set password ────────────────────────────────────────────────────────
+// ─── Admin set password (requires current password — used by user themselves) ──
 export const adminSetPassword = async (email, currentPassword, newPassword) => {
   const cred = await signInWithEmailAndPassword(secondaryAuth, email, currentPassword)
+  try {
+    await updatePassword(cred.user, newPassword)
+  } finally {
+    try { await signOut(secondaryAuth) } catch (_) {}
+  }
+}
+
+// ─── Admin force-reset password using known default then set new ──────────────
+// This works by signing into the secondary app with the KNOWN default password
+// (employee ID or GR number), then updating to the new value.
+// If the user has already changed their password, this will fail — admin must
+// use "Reset Password" which requires the current password.
+export const adminForceResetPassword = async (email, knownCurrentPassword, newPassword) => {
+  let cred
+  try {
+    cred = await signInWithEmailAndPassword(secondaryAuth, email, knownCurrentPassword)
+  } catch (err) {
+    throw new Error(`Could not sign in with current password: ${err.message}`)
+  }
   try {
     await updatePassword(cred.user, newPassword)
   } finally {

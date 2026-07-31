@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle, HiUpload, HiTemplate, HiX } from 'react-icons/hi'
 import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument, invalidateStudentsCache, savePendingEmailChange } from '../../firebase/firestore'
-import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword } from '../../firebase/adminAuth'
+import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword, adminForceResetPassword } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
 import { exportStudentsToExcel } from '../../utils/excelExport'
@@ -343,6 +343,26 @@ export default function Students() {
       setPwForm({ current: '', newPw: '', confirm: '' })
     } catch (err) { toast.error(err.message || 'Reset failed') }
     finally { setSaving(false) }
+  }
+
+  // Reset student password to GR number (default)
+  const handleResetToDefault = async () => {
+    const student = pwModal.student
+    const defaultPw = student.grNumber?.trim()
+    if (!defaultPw || defaultPw.length < 6) {
+      toast.error('GR Number must be at least 6 characters to use as password')
+      return
+    }
+    if (!window.confirm(`Reset "${student.studentName}" password to GR number "${defaultPw}"?`)) return
+    setSaving(true)
+    try {
+      await adminForceResetPassword(student.email, pwForm.current || defaultPw, defaultPw)
+      toast.success(`Password reset to GR number: ${defaultPw}`)
+      setPwModal({ open: false, student: null })
+      setPwForm({ current: '', newPw: '', confirm: '' })
+    } catch (err) {
+      toast.error(err.message || 'Reset failed — try entering current password manually')
+    } finally { setSaving(false) }
   }
 
   // ─── Import handling ──────────────────────────────────────────────────────
@@ -990,25 +1010,61 @@ export default function Students() {
       {/* Reset Password Modal */}
       <Modal isOpen={pwModal.open} onClose={() => !saving && setPwModal({ open: false, student: null })} title="Reset Student Password" size="sm">
         {pwModal.student && (
-          <form onSubmit={handleResetPw} className="space-y-4">
+          <div className="space-y-4">
             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <p className="text-sm font-medium text-gray-900 dark:text-white">{pwModal.student.studentName}</p>
               <p className="text-xs text-gray-500">{pwModal.student.email}</p>
+              {pwModal.student.grNumber && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  Default password (GR No.): <strong>{pwModal.student.grNumber}</strong>
+                </p>
+              )}
             </div>
-            {[['Current Password', 'current', "Student's current password"], ['New Password', 'newPw', 'Min 6 characters'], ['Confirm New Password', 'confirm', 'Repeat new password']].map(([label, key, ph]) => (
-              <div key={key}>
-                <label className="label">{label}</label>
-                <input type="password" value={pwForm[key]} onChange={(e) => setPwForm((p) => ({ ...p, [key]: e.target.value }))}
-                  className="input-field" required placeholder={ph} />
+
+            {/* Quick reset to default */}
+            {pwModal.student.grNumber && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
+                <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mb-2">Reset to Default Password</p>
+                <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+                  Set password back to GR number: <strong>{pwModal.student.grNumber}</strong>
+                </p>
+                <div className="mb-2">
+                  <label className="label text-xs">Current Password (required)</label>
+                  <input type="password" value={pwForm.current}
+                    onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
+                    className="input-field" placeholder="Student's current password" />
+                </div>
+                <button
+                  type="button"
+                  disabled={saving || !pwForm.current}
+                  onClick={handleResetToDefault}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
+                >
+                  {saving ? <LoadingSpinner size="sm" /> : <HiKey className="w-4 h-4" />}
+                  Reset to GR No. ({pwModal.student.grNumber})
+                </button>
               </div>
-            ))}
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={() => setPwModal({ open: false, student: null })} className="btn-secondary">Cancel</button>
-              <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Reset Password</>}
-              </button>
+            )}
+
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+              <p className="text-xs text-gray-500 mb-3">Or set a custom password:</p>
+              <form onSubmit={handleResetPw} className="space-y-3">
+                {[['Current Password', 'current', "Student's current password"], ['New Password', 'newPw', 'Min 6 characters'], ['Confirm New Password', 'confirm', 'Repeat new password']].map(([label, key, ph]) => (
+                  <div key={key}>
+                    <label className="label">{label}</label>
+                    <input type="password" value={pwForm[key]} onChange={(e) => setPwForm((p) => ({ ...p, [key]: e.target.value }))}
+                      className="input-field" placeholder={ph} />
+                  </div>
+                ))}
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => { setPwModal({ open: false, student: null }); setPwForm({ current: '', newPw: '', confirm: '' }) }} className="btn-secondary">Cancel</button>
+                  <button type="submit" disabled={saving} className="btn-primary">
+                    {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Set Custom Password</>}
+                  </button>
+                </div>
+              </form>
             </div>
-          </form>
+          </div>
         )}
       </Modal>
 
