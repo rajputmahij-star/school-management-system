@@ -299,21 +299,17 @@ export default function Employees() {
   const handleResetToDefault = async () => {
     const emp = pwModal.emp
     const rawId = emp.employeeId?.trim() || ''
-    // Pad with leading zeros to ensure minimum 6 characters
     const defaultPw = rawId.padStart(6, '0')
-    if (!rawId) {
-      toast.error('No Employee ID found for this employee')
-      return
-    }
+    if (!rawId) { toast.error('No Employee ID found for this employee'); return }
     if (!window.confirm(`Reset "${emp.employeeName}" password to "${defaultPw}"?`)) return
     setSaving(true)
     try {
-      await adminForceResetPassword(emp.email, pwForm.current || defaultPw, defaultPw)
+      await adminForceResetPassword(emp.email, null, defaultPw)
       toast.success(`Password reset to: ${defaultPw}`)
       setPwModal({ open: false, emp: null })
       setPwForm({ current: '', newPw: '', confirm: '' })
     } catch (err) {
-      toast.error(err.message || 'Reset failed — enter the current password and try again')
+      toast.error(err.message || 'Reset failed')
     } finally { setSaving(false) }
   }
 
@@ -680,23 +676,16 @@ export default function Employees() {
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
                 <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mb-1">Reset to Default Password</p>
                 <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
-                  Set password back to Employee ID: <strong>{pwModal.emp.employeeId}</strong>
+                  New password will be: <strong className="text-lg">{pwModal.emp.employeeId.trim().padStart(6, '0')}</strong>
                 </p>
-                <div className="mb-2">
-                  <label className="label text-xs">Current Password (required)</label>
-                  <input type="password" value={pwForm.current}
-                    onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
-                    className="input-field" placeholder="Employee's current password"
-                    autoComplete="new-password" />
-                </div>
                 <button
                   type="button"
-                  disabled={saving || !pwForm.current}
+                  disabled={saving}
                   onClick={handleResetToDefault}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
                 >
                   {saving ? <LoadingSpinner size="sm" /> : <HiKey className="w-4 h-4" />}
-                  Reset to Employee ID ({pwModal.emp.employeeId})
+                  Reset to Employee ID ({pwModal.emp.employeeId.trim().padStart(6, '0')})
                 </button>
               </div>
             )}

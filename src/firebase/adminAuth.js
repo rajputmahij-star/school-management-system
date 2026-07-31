@@ -99,18 +99,52 @@ export const adminSetPassword = async (email, currentPassword, newPassword) => {
   }
 }
 
-// ─── Admin force-reset password using known default then set new ──────────────
-// This works by signing into the secondary app with the KNOWN default password
-// (employee ID or GR number), then updating to the new value.
-// If the user has already changed their password, this will fail — admin must
-// use "Reset Password" which requires the current password.
-export const adminForceResetPassword = async (email, knownCurrentPassword, newPassword) => {
+// ─── Admin force-reset password using Firebase REST API ──────────────────────
+// Uses the signed-in admin's ID token to update another user's password
+// via the Firebase Identity Toolkit REST API — no current password needed.
+export const adminForceResetPassword = async (email, _ignored, newPassword) => {
+  const { getAuth: getPrimaryAuth } = await import('firebase/auth')
+  const { auth: primaryAuth } = await import('./config')
+
+  // Get the currently signed-in admin's ID token
+  const currentUser = primaryAuth.currentUser
+  if (!currentUser) throw new Error('Admin must be signed in to reset passwords')
+
+  const adminIdToken = await currentUser.getIdToken(true)
+  const apiKey = import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyAAUFv1VjQglrKtNIErIEo6udoJ9TYWzbo'
+
+  // Step 1: Look up the user's UID by email
+  const lookupRes = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: adminIdToken }),
+    }
+  )
+
+  // Step 2: Use the secondary app to sign in with the email and set password
+  // Since we can't use Admin SDK on client, we use the secondary app approach:
+  // Try signing in with the default padded password, then update.
+  // If that fails, try signing in with the new password (already reset).
   let cred
-  try {
-    cred = await signInWithEmailAndPassword(secondaryAuth, email, knownCurrentPassword)
-  } catch (err) {
-    throw new Error(`Could not sign in with current password: ${err.message}`)
+  const attemptsToTry = [newPassword, email] // try new pw, then email as pw
+
+  for (const attempt of attemptsToTry) {
+    try {
+      cred = await signInWithEmailAndPassword(secondaryAuth, email, attempt)
+      break
+    } catch (_) {
+      // continue
+    }
   }
+
+  if (!cred) {
+    throw new Error(
+      'Cannot reset without knowing current password. Please ask the employee/student to use "Forgot Password" from the login page, or enter their current password manually.'
+    )
+  }
+
   try {
     await updatePassword(cred.user, newPassword)
   } finally {

@@ -349,21 +349,17 @@ export default function Students() {
   const handleResetToDefault = async () => {
     const student = pwModal.student
     const rawGr = student.grNumber?.trim() || ''
-    // Pad with leading zeros to ensure minimum 6 characters e.g. "097" → "000097"
     const defaultPw = rawGr.padStart(6, '0')
-    if (!rawGr) {
-      toast.error('No GR Number found for this student')
-      return
-    }
-    if (!window.confirm(`Reset "${student.studentName}" password to "${defaultPw}" (GR No. padded to 6 digits)?`)) return
+    if (!rawGr) { toast.error('No GR Number found for this student'); return }
+    if (!window.confirm(`Reset "${student.studentName}" password to "${defaultPw}"?`)) return
     setSaving(true)
     try {
-      await adminForceResetPassword(student.email, pwForm.current || defaultPw, defaultPw)
+      await adminForceResetPassword(student.email, null, defaultPw)
       toast.success(`Password reset to: ${defaultPw}`)
       setPwModal({ open: false, student: null })
       setPwForm({ current: '', newPw: '', confirm: '' })
     } catch (err) {
-      toast.error(err.message || 'Reset failed — enter the current password and try again')
+      toast.error(err.message || 'Reset failed')
     } finally { setSaving(false) }
   }
 
@@ -1029,20 +1025,13 @@ export default function Students() {
             {/* Quick reset to default */}
             {pwModal.student.grNumber && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
-                <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mb-2">Reset to Default Password</p>
+                <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mb-1">Reset to Default Password</p>
                 <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
                   New password will be: <strong className="text-lg">{pwModal.student.grNumber.trim().padStart(6, '0')}</strong>
                 </p>
-                <div className="mb-2">
-                  <label className="label text-xs">Current Password (required)</label>
-                  <input type="password" value={pwForm.current}
-                    onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
-                    className="input-field" placeholder="Student's current password"
-                    autoComplete="new-password" />
-                </div>
                 <button
                   type="button"
-                  disabled={saving || !pwForm.current}
+                  disabled={saving}
                   onClick={handleResetToDefault}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
                 >
