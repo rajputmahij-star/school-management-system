@@ -354,7 +354,8 @@ export default function Students() {
     if (!window.confirm(`Reset "${student.studentName}" password to "${defaultPw}"?`)) return
     setSaving(true)
     try {
-      await adminForceResetPassword(student.email, null, defaultPw)
+      // Pass defaultPw as the known current password — works if user hasn't changed it yet
+      await adminForceResetPassword(student.email, defaultPw, defaultPw)
       toast.success(`Password reset to: ${defaultPw}`)
       setPwModal({ open: false, student: null })
       setPwForm({ current: '', newPw: '', confirm: '' })

@@ -304,7 +304,8 @@ export default function Employees() {
     if (!window.confirm(`Reset "${emp.employeeName}" password to "${defaultPw}"?`)) return
     setSaving(true)
     try {
-      await adminForceResetPassword(emp.email, null, defaultPw)
+      // Pass defaultPw as the known current password — works if user hasn't changed it yet
+      await adminForceResetPassword(emp.email, defaultPw, defaultPw)
       toast.success(`Password reset to: ${defaultPw}`)
       setPwModal({ open: false, emp: null })
       setPwForm({ current: '', newPw: '', confirm: '' })
