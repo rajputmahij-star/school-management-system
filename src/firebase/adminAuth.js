@@ -11,11 +11,13 @@ import {
   signOut,
 } from 'firebase/auth'
 import { doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from './config'
+import { db, auth as primaryAuth } from './config'
+
+const API_KEY = import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyAAUFv1VjQglrKtNIErIEo6udoJ9TYWzbo'
 
 // ── Same fallbacks as config.js so secondary app always initializes ───────────
 const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY            || 'AIzaSyAAUFv1VjQglrKtNIErIEo6udoJ9TYWzbo',
+  apiKey:            API_KEY,
   authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN        || 'anand-school-bca42.firebaseapp.com',
   projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID         || 'anand-school-bca42',
   storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET     || 'anand-school-bca42.firebasestorage.app',
@@ -41,22 +43,15 @@ export const createStudentAccount = async (email, password, studentData) => {
   } finally {
     try { await signOut(secondaryAuth) } catch (_) {}
   }
-
   try {
     await setDoc(doc(db, 'students', uid), {
-      uid,
-      role: 'student',
-      email,
-      ...studentData,
-      status:    'active',
-      leaveDate: null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      uid, role: 'student', email, ...studentData,
+      status: 'active', leaveDate: null,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     })
   } catch (err) {
     throw new Error(`Firestore write failed: ${err.message}`)
   }
-
   return uid
 }
 
@@ -71,25 +66,19 @@ export const createEmployeeAccount = async (email, password, employeeData) => {
   } finally {
     try { await signOut(secondaryAuth) } catch (_) {}
   }
-
   try {
     await setDoc(doc(db, 'employees', uid), {
-      uid,
-      role: 'employee',
-      email,
-      ...employeeData,
-      status:    'active',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      uid, role: 'employee', email, ...employeeData,
+      status: 'active',
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     })
   } catch (err) {
     throw new Error(`Firestore write failed: ${err.message}`)
   }
-
   return uid
 }
 
-// ─── Admin set password (requires current password — used by user themselves) ──
+// ─── Admin set password (requires current password) ───────────────────────────
 export const adminSetPassword = async (email, currentPassword, newPassword) => {
   const cred = await signInWithEmailAndPassword(secondaryAuth, email, currentPassword)
   try {
@@ -99,57 +88,73 @@ export const adminSetPassword = async (email, currentPassword, newPassword) => {
   }
 }
 
-// ─── Admin force-reset password using Firebase REST API ──────────────────────
-// Uses the signed-in admin's ID token to update another user's password
-// via the Firebase Identity Toolkit REST API — no current password needed.
+// ─── Admin force-reset password via Firebase Identity Toolkit REST API ────────
+// Uses the admin's own ID token to update another user's password.
+// Works without Cloud Functions — uses Google's Identity Toolkit API.
 export const adminForceResetPassword = async (email, _ignored, newPassword) => {
-  const { getAuth: getPrimaryAuth } = await import('firebase/auth')
-  const { auth: primaryAuth } = await import('./config')
+  // Step 1: Get admin's current ID token
+  const adminUser = primaryAuth.currentUser
+  if (!adminUser) throw new Error('Not signed in as admin')
+  const idToken = await adminUser.getIdToken(true)
 
-  // Get the currently signed-in admin's ID token
-  const currentUser = primaryAuth.currentUser
-  if (!currentUser) throw new Error('Admin must be signed in to reset passwords')
+  // Step 2: Get the target user's UID by looking them up
+  // We use the signInWithPassword endpoint to get UID from email
+  // Since we don't know their password, we use the admin's token to call
+  // the accounts:update endpoint directly with localId
 
-  const adminIdToken = await currentUser.getIdToken(true)
-  const apiKey = import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyAAUFv1VjQglrKtNIErIEo6udoJ9TYWzbo'
-
-  // Step 1: Look up the user's UID by email
+  // First get target user UID via lookup with admin token
   const lookupRes = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: adminIdToken }),
+      body: JSON.stringify({ idToken }),
+    }
+  )
+  const lookupData = await lookupRes.json()
+  if (!lookupRes.ok) throw new Error(lookupData.error?.message || 'Lookup failed')
+
+  // Find target user by email using admin REST API
+  // We need to search for the user — use the admin's token with users list
+  const searchRes = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${import.meta.env.VITE_FIREBASE_PROJECT_ID || 'anand-school-bca42'}/accounts:lookup`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ email: [email] }),
     }
   )
 
-  // Step 2: Use the secondary app to sign in with the email and set password
-  // Since we can't use Admin SDK on client, we use the secondary app approach:
-  // Try signing in with the default padded password, then update.
-  // If that fails, try signing in with the new password (already reset).
-  let cred
-  const attemptsToTry = [newPassword, email] // try new pw, then email as pw
+  if (!searchRes.ok) {
+    // Fallback: sign in with secondary app using a temp approach
+    throw new Error('Admin API not available. Please use "Set Custom Password" below and enter the current password.')
+  }
 
-  for (const attempt of attemptsToTry) {
-    try {
-      cred = await signInWithEmailAndPassword(secondaryAuth, email, attempt)
-      break
-    } catch (_) {
-      // continue
+  const searchData = await searchRes.json()
+  const targetUid = searchData.users?.[0]?.localId
+  if (!targetUid) throw new Error(`No user found with email: ${email}`)
+
+  // Step 3: Update password using admin REST API
+  const updateRes = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:update?key=${API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        idToken,           // admin's token — can update any user IF admin has permission
+        localId: targetUid,
+        password: newPassword,
+        returnSecureToken: false,
+      }),
     }
-  }
+  )
+  const updateData = await updateRes.json()
+  if (!updateRes.ok) throw new Error(updateData.error?.message || 'Password update failed')
 
-  if (!cred) {
-    throw new Error(
-      'Cannot reset without knowing current password. Please ask the employee/student to use "Forgot Password" from the login page, or enter their current password manually.'
-    )
-  }
-
-  try {
-    await updatePassword(cred.user, newPassword)
-  } finally {
-    try { await signOut(secondaryAuth) } catch (_) {}
-  }
+  return { success: true }
 }
 
 // ─── Update records ────────────────────────────────────────────────────────────
