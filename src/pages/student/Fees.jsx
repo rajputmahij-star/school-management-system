@@ -583,8 +583,8 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
             </div>
           )}
 
-          {/* UPI Payment Section - Only show if UPI is selected AND not partial payment */}
-          {rowsToSubmit.length > 0 && form.paymentMode === 'UPI' && !form.isPartialPayment && upiSettings?.upiId && (
+          {/* UPI Payment Section - Show for both full and partial payments */}
+          {rowsToSubmit.length > 0 && form.paymentMode === 'UPI' && upiSettings?.upiId && (
             <div className="border-2 border-blue-200 dark:border-blue-800 rounded-xl p-4 bg-blue-50 dark:bg-blue-900/20">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
@@ -714,7 +714,10 @@ const PaymentModal = ({ allRows, baseFeePerMonth, userData, paymentWebsiteUrl, u
                     </div>
                     <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
                       <p className="text-xs text-center text-blue-700 dark:text-blue-300 font-semibold">
-                        Amount: ₹{actualPayment.toLocaleString('en-IN')}
+                        {form.isPartialPayment ? 'Partial Payment' : 'Amount'}: ₹{actualPayment.toLocaleString('en-IN')}
+                        {form.isPartialPayment && (
+                          <span className="ml-2 text-orange-500">(of ₹{totalPayable.toLocaleString('en-IN')} total)</span>
+                        )}
                       </p>
                       <p className="text-xs text-center text-blue-600 dark:text-blue-400 mt-0.5">
                         {upiSettings.upiId}
