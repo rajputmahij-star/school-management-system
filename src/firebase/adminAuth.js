@@ -8,6 +8,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updatePassword,
+  updateEmail,
   sendPasswordResetEmail,
   signOut,
 } from 'firebase/auth'
@@ -77,7 +78,7 @@ export const createEmployeeAccount = async (email, password, employeeData) => {
   return uid
 }
 
-// ─── Admin set password (requires current password — user-initiated) ───────────
+// ─── Admin set password (requires current password) ───────────────────────────
 export const adminSetPassword = async (email, currentPassword, newPassword) => {
   const cred = await signInWithEmailAndPassword(secondaryAuth, email, currentPassword)
   try {
@@ -87,28 +88,57 @@ export const adminSetPassword = async (email, currentPassword, newPassword) => {
   }
 }
 
-// ─── Admin force-reset: sign in with known password and update ────────────────
-// Works when the current password is the default (GR no. / Employee ID).
-// If the user changed their password, it falls back to sending a reset email.
+// ─── Admin force-reset password ───────────────────────────────────────────────
+// Tries to sign in with the known default password (padded GR/Employee ID),
+// then updates password. If user already changed it, sends a reset email.
 export const adminForceResetPassword = async (email, knownCurrentPw, newPassword) => {
-  // Try signing in with the known current password (default padded ID/GR)
   let cred
   try {
     cred = await signInWithEmailAndPassword(secondaryAuth, email, knownCurrentPw)
   } catch (_) {
-    // Password was already changed by user — send reset email as fallback
-    try {
-      await sendPasswordResetEmail(primaryAuth, email)
-    } catch (e) {
-      throw new Error(`Password changed by user. Reset email could not be sent: ${e.message}`)
+    // Password was changed — send reset email
+    try { await sendPasswordResetEmail(primaryAuth, email) } catch (e) {
+      throw new Error(`User changed their password. Reset email failed: ${e.message}`)
     }
     throw new Error(
-      `This user has already changed their password. A password reset email has been sent to ${email}. Ask them to check their inbox and reset using the link.`
+      `User has changed their password. A reset email has been sent to ${email}. Ask them to check their inbox.`
     )
+  }
+  try {
+    await updatePassword(cred.user, newPassword)
+  } finally {
+    try { await signOut(secondaryAuth) } catch (_) {}
+  }
+}
+
+// ─── Admin update Auth email ───────────────────────────────────────────────────
+// Signs into secondary app with known password, updates Auth email.
+// Returns { success, method } where method is 'auth' or 'pending'.
+export const adminUpdateAuthEmail = async (oldEmail, newEmail, knownPassword) => {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+    throw new Error('Invalid email format')
+  }
+  if (oldEmail.trim().toLowerCase() === newEmail.trim().toLowerCase()) {
+    return { success: true, method: 'noop' }
+  }
+
+  // Try to sign in with known password to update Auth email directly
+  let cred
+  try {
+    cred = await signInWithEmailAndPassword(secondaryAuth, oldEmail, knownPassword)
+  } catch (_) {
+    // Can't sign in — return special code so caller saves as pending
+    return { success: false, method: 'pending' }
   }
 
   try {
-    await updatePassword(cred.user, newPassword)
+    await updateEmail(cred.user, newEmail)
+    return { success: true, method: 'auth' }
+  } catch (err) {
+    if (err.code === 'auth/email-already-in-use') {
+      throw new Error('This email is already registered to another account')
+    }
+    return { success: false, method: 'pending' }
   } finally {
     try { await signOut(secondaryAuth) } catch (_) {}
   }

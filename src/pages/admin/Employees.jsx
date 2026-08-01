@@ -6,7 +6,7 @@ import {
 } from 'react-icons/hi'
 import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument, savePendingEmailChange } from '../../firebase/firestore'
 import { createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
-  deactivateEmployee, activateEmployee, adminSetPassword, adminForceResetPassword,
+  deactivateEmployee, activateEmployee, adminSetPassword, adminForceResetPassword, adminUpdateAuthEmail,
 } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, generateEmployeeId, formatCurrency, paginate } from '../../utils/helpers'
@@ -202,17 +202,32 @@ export default function Employees() {
       if (editData) {
         const uid = editData.uid || editData.id
         const newEmail = form.email.trim()
-        const emailChanged = newEmail !== (editData.email || '').trim()
-        await updateEmployeeRecord(uid, {
-          ...data,
-          email: newEmail,
-          ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
-        })
+        const oldEmail = (editData.email || '').trim()
+        const emailChanged = newEmail && newEmail !== oldEmail
+
+        // 1. Update Firestore first
+        await updateEmployeeRecord(uid, { ...data, email: newEmail })
+
+        // 2. If email changed, update Firebase Auth email too
         if (emailChanged) {
-          await savePendingEmailChange(uid, editData.email || '', newEmail)
-          toast.success('Employee updated. They can now log in with the new email.')
+          const empIdPw = (editData.employeeId || form.employeeId || '').trim().padStart(6, '0')
+          try {
+            const result = await adminUpdateAuthEmail(oldEmail, newEmail, empIdPw)
+            if (result.method === 'auth') {
+              await savePendingEmailChange(uid, oldEmail, newEmail)
+              toast.success('Email updated successfully. Please use your new email address for future logins.')
+            } else if (result.method === 'pending') {
+              await savePendingEmailChange(uid, oldEmail, newEmail)
+              toast.success('Profile updated. New email will be active on their next login.')
+            } else {
+              toast.success('Employee updated successfully')
+            }
+          } catch (err) {
+            toast.error(err.message)
+          }
+        } else {
+          toast.success('Employee updated successfully')
         }
-        toast.success('Employee updated successfully')
       } else {
         await createEmployeeAccount(form.email.trim(), form.password, data)
         toast.success(`Account created for ${form.employeeName}`)

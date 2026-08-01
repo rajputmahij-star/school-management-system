@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle, HiUpload, HiTemplate, HiX } from 'react-icons/hi'
 import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument, invalidateStudentsCache, savePendingEmailChange } from '../../firebase/firestore'
-import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword, adminForceResetPassword } from '../../firebase/adminAuth'
+import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword, adminForceResetPassword, adminUpdateAuthEmail } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
 import { exportStudentsToExcel } from '../../utils/excelExport'
@@ -253,18 +253,35 @@ export default function Students() {
       if (editData) {
         const uid = editData.uid || editData.id
         const newEmail = form.email.trim()
-        const emailChanged = newEmail !== (editData.email || '').trim()
-        // Store pendingEmail so Firebase Auth email updates on next login (free, no Cloud Function)
-        await updateStudentRecord(uid, {
-          ...data,
-          email: newEmail,
-          ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
-        })
+        const oldEmail = (editData.email || '').trim()
+        const emailChanged = newEmail && newEmail !== oldEmail
+
+        // 1. Update Firestore first
+        await updateStudentRecord(uid, { ...data, email: newEmail })
+
+        // 2. If email changed, update Firebase Auth email too
         if (emailChanged) {
-          await savePendingEmailChange(uid, editData.email || '', newEmail)
-          toast.success('Student updated. They can now log in with the new email.')
+          // Try using the padded GR number as known current password
+          const grPw = (editData.grNumber || form.grNumber || '').trim().padStart(6, '0')
+          try {
+            const result = await adminUpdateAuthEmail(oldEmail, newEmail, grPw)
+            if (result.method === 'auth') {
+              // Auth email updated successfully — also clear any pending
+              await savePendingEmailChange(uid, oldEmail, newEmail)
+              toast.success('Email updated successfully. Please use your new email address for future logins.')
+            } else if (result.method === 'pending') {
+              // Save as pending — will apply when user next logs in
+              await savePendingEmailChange(uid, oldEmail, newEmail)
+              toast.success('Profile updated. New email will be active on their next login.')
+            } else {
+              toast.success('Student updated successfully')
+            }
+          } catch (err) {
+            toast.error(err.message)
+          }
+        } else {
+          toast.success('Student updated successfully')
         }
-        toast.success('Student updated successfully')
       } else {
         await createStudentAccount(form.email.trim(), form.password, data)
         toast.success(`Account created for ${form.studentName}`)
