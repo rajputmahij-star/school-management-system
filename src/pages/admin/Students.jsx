@@ -27,7 +27,7 @@ const TRANSPORT_OPTIONS = [
 
 const EMPTY = {
   // credentials
-  email: '', password: '',
+  email: '', password: '', newPassword: '',
   // basic
   studentId: '', photo: '',
   studentName: '', dob: '',
@@ -259,10 +259,13 @@ export default function Students() {
           ...data,
           email: newEmail,
           ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
+          ...(form.newPassword?.trim() ? { pendingPassword: form.newPassword.trim() } : {}),
         })
         if (emailChanged) {
           await savePendingEmailChange(uid, editData.email || '', newEmail)
           toast.success('Student updated. They can now log in with the new email.')
+        } else if (form.newPassword?.trim()) {
+          toast.success('Student updated. New password will apply on their next login.')
         }
         toast.success('Student updated successfully')
       } else {
@@ -580,10 +583,11 @@ export default function Students() {
             </div>
           )}
           {editData && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
-              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Email / Login ID</p>
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-3">
+              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Login Credentials (Admin Edit)</p>
               <TF label="Email Address" type="email" value={form.email} onChange={h('email')} placeholder="student@school.com" />
-              <p className="text-xs text-gray-400">The new email will become their login ID on their next login.</p>
+              <TF label="New Password" type="password" value={form.newPassword || ''} onChange={h('newPassword')} placeholder="Leave blank to keep current password" />
+              <p className="text-xs text-gray-400">Changes apply on their next login.</p>
             </div>
           )}
 
