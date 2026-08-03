@@ -340,8 +340,11 @@ export default function Students() {
     if (pwForm.newPw.length < 6)         { toast.error('Min 6 characters'); return }
     setSaving(true)
     try {
-      await adminSetPassword(pwModal.student.email, pwForm.current, pwForm.newPw)
-      toast.success('Password reset successfully')
+      const uid = pwModal.student.uid || pwModal.student.id
+      // Store pendingPassword on the Firestore doc — it will be applied automatically
+      // the next time the student logs in (via applyPendingPasswordChange in auth.js).
+      await updateStudentRecord(uid, { pendingPassword: pwForm.newPw.trim() })
+      toast.success('Password updated. The student must log out and back in for the new password to take effect.')
       setPwModal({ open: false, student: null })
       setPwForm({ current: '', newPw: '', confirm: '' })
     } catch (err) { toast.error(err.message || 'Reset failed') }
@@ -999,7 +1002,12 @@ export default function Students() {
               <p className="text-sm font-medium text-gray-900 dark:text-white">{pwModal.student.studentName}</p>
               <p className="text-xs text-gray-500">{pwModal.student.email}</p>
             </div>
-            {[['Current Password', 'current', "Student's current password"], ['New Password', 'newPw', 'Min 6 characters'], ['Confirm New Password', 'confirm', 'Repeat new password']].map(([label, key, ph]) => (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                ⚠️ The new password will take effect the next time the student logs in.
+              </p>
+            </div>
+            {[['New Password', 'newPw', 'Min 6 characters'], ['Confirm New Password', 'confirm', 'Repeat new password']].map(([label, key, ph]) => (
               <div key={key}>
                 <label className="label">{label}</label>
                 <input type="password" value={pwForm[key]} onChange={(e) => setPwForm((p) => ({ ...p, [key]: e.target.value }))}
@@ -1009,7 +1017,7 @@ export default function Students() {
             <div className="flex justify-end gap-3">
               <button type="button" onClick={() => setPwModal({ open: false, student: null })} className="btn-secondary">Cancel</button>
               <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Reset Password</>}
+                {saving ? <><LoadingSpinner size="sm" /> Saving…</> : <><HiKey className="w-4 h-4" /> Set New Password</>}
               </button>
             </div>
           </form>

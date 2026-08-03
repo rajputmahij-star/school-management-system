@@ -142,6 +142,10 @@ const applyPendingEmailChange = async (uid, docRef, userData) => {
  * If admin set a pendingPassword on the Firestore doc,
  * update Firebase Auth password using the user's own active session.
  * Then clear pendingPassword from Firestore.
+ *
+ * Note: updatePassword() requires the session to be recent. If it fails with
+ * auth/requires-recent-login, we skip silently — the change will be retried on
+ * the next login session.
  */
 const applyPendingPasswordChange = async (uid, docRef, userData) => {
   if (!userData.pendingPassword) return
@@ -153,8 +157,15 @@ const applyPendingPasswordChange = async (uid, docRef, userData) => {
       pendingPassword: null,
       updatedAt: serverTimestamp(),
     })
+    console.log('Pending password change applied for', uid)
   } catch (err) {
-    console.warn('Pending password change failed:', err.message)
+    if (err.code === 'auth/requires-recent-login') {
+      // Session is too old to change password — leave pendingPassword in Firestore
+      // so it will be retried on the next fresh login.
+      console.warn('Pending password deferred (requires recent login):', uid)
+    } else {
+      console.warn('Pending password change failed:', err.message)
+    }
   }
 }
 

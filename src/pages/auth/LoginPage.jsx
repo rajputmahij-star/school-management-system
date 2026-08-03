@@ -63,38 +63,50 @@ export default function LoginPage() {
     if (!resetEmail.trim()) { toast.error('Enter your registered email address'); return }
     setLoading(true)
     try {
-      // Check if user entered their new (pending) email — look up old Firebase Auth email
-      let authEmail = resetEmail.trim()
+      // The user may enter either their current Firebase Auth email OR a pending new email
+      // that the admin set but hasn't been migrated yet. We need to find the actual
+      // Firebase Auth email to send the reset to.
+      let authEmail = resetEmail.trim().toLowerCase()
       try {
         const { collection, query, where, getDocs } = await import('firebase/firestore')
         const { db } = await import('../../firebase/config')
-        const q = query(
-          collection(db, 'pending_email_changes'),
-          where('newEmail', '==', resetEmail.trim().toLowerCase()),
-          where('completed', '==', false)
-        )
-        const snap = await getDocs(q)
-        if (!snap.empty) {
-          authEmail = snap.docs[0].data().oldEmail || authEmail
-        }
-      } catch {}
 
-      const actionCodeSettings = {
-        url: window.location.origin + '/login',
-        handleCodeInApp: false,
+        // Case 1: user typed their pending (new) email — find the old Firebase Auth email
+        const q1 = query(
+          collection(db, 'pending_email_changes'),
+          where('newEmail', '==', authEmail)
+        )
+        const snap1 = await getDocs(q1)
+        if (!snap1.empty) {
+          const record = snap1.docs[0].data()
+          // Use old email only if the change hasn't been completed (i.e. Auth still has old email)
+          if (!record.completed && record.oldEmail) {
+            authEmail = record.oldEmail.trim().toLowerCase()
+          }
+        }
+      } catch (_) {
+        // If Firestore lookup fails, fall back to what the user typed
       }
-      await sendPasswordResetEmail(auth, authEmail, actionCodeSettings)
+
+      // Send reset email — no actionCodeSettings to avoid domain-authorization issues
+      await sendPasswordResetEmail(auth, authEmail)
       setResetSent(true)
       toast.success('Password reset email sent!')
     } catch (err) {
+      console.error('Password reset error:', err.code, err.message)
       if (err.code === 'auth/user-not-found') {
         toast.error('No account found with this email address.')
       } else if (err.code === 'auth/invalid-email') {
         toast.error('Invalid email address. Please check and try again.')
+      } else if (err.code === 'auth/invalid-credential') {
+        // Firebase v9+ sometimes returns this for non-existent users
+        toast.error('No account found with this email address.')
       } else if (err.code === 'auth/too-many-requests') {
         toast.error('Too many requests. Please wait a few minutes and try again.')
+      } else if (err.code === 'auth/network-request-failed') {
+        toast.error('Network error. Please check your internet connection.')
       } else {
-        toast.error('Failed to send reset email. Please try again.')
+        toast.error(`Failed to send reset email: ${err.message || err.code || 'Unknown error'}`)
       }
     } finally { setLoading(false) }
   }

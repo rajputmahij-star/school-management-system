@@ -290,8 +290,12 @@ export default function Employees() {
     if (pwForm.newPw.length < 6)         { toast.error('Min 6 characters'); return }
     setSaving(true)
     try {
-      await adminSetPassword(pwModal.emp.email, pwForm.current, pwForm.newPw)
-      toast.success('Password reset successfully')
+      const uid = pwModal.emp.uid || pwModal.emp.id
+      // Store pendingPassword on the Firestore doc — it will be applied automatically
+      // the next time the employee logs in (via applyPendingPasswordChange in auth.js).
+      // This avoids needing the current password and works without Cloud Functions.
+      await updateEmployeeRecord(uid, { pendingPassword: pwForm.newPw.trim() })
+      toast.success('Password updated. The employee must log out and back in for the new password to take effect.')
       setPwModal({ open: false, emp: null })
       setPwForm({ current: '', newPw: '', confirm: '' })
     } catch (err) {
@@ -650,11 +654,10 @@ export default function Employees() {
               <p className="text-sm font-medium text-gray-900 dark:text-white">{pwModal.emp.employeeName}</p>
               <p className="text-xs text-gray-500">{pwModal.emp.email}</p>
             </div>
-            <div>
-              <label className="label">Current Password</label>
-              <input type="password" value={pwForm.current}
-                onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
-                className="input-field" required placeholder="Employee's current password" />
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                ⚠️ The new password will take effect the next time the employee logs in.
+              </p>
             </div>
             <div>
               <label className="label">New Password</label>
@@ -671,7 +674,7 @@ export default function Employees() {
             <div className="flex justify-end gap-3">
               <button type="button" onClick={() => setPwModal({ open: false, emp: null })} className="btn-secondary">Cancel</button>
               <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Reset Password</>}
+                {saving ? <><LoadingSpinner size="sm" /> Saving…</> : <><HiKey className="w-4 h-4" /> Set New Password</>}
               </button>
             </div>
           </form>
