@@ -20,8 +20,8 @@ service cloud.firestore {
 
     // ─── Admins ─────────────────────────────────────────────────────────────
     match /admins/{uid} {
-      // Admin can read own document
-      allow read: if isAuth() && request.auth.uid == uid;
+      // Any authenticated admin can read the admins collection (for listing)
+      allow read: if isAuth();
       // First admin bootstrap — only if no admin doc exists for this uid yet
       allow create: if isAuth() && !exists(/databases/$(database)/documents/admins/$(uid));
       allow update, delete: if isAdmin();
