@@ -101,10 +101,15 @@ export default function SalaryManagement() {
         const uid = emp.uid || emp.id
         const records = await getEmployeeAttendance(uid, selectedMonth, selectedYear)
 
-        const presentDays = records.filter((a) => a.attendanceType === 'Present').length
-        const halfDays    = records.filter((a) => a.attendanceType === 'Half Day').length
-        const absentDays  = records.filter((a) => a.attendanceType === 'Absent').length
-        const leaveDays   = records.filter((a) => a.attendanceType === 'Leave').length
+        // Normalize codes — supports both old strings ('Present') and new codes ('P')
+        const norm = (type) => {
+          const map = { 'Present': 'P', 'Absent': 'A', 'Half Day': 'HDF', 'Leave': 'L', 'Late Present': 'LP', 'Holiday': 'H' }
+          return map[type] || type
+        }
+        const presentDays = records.filter((a) => ['P', 'LP'].includes(norm(a.attendanceType))).length
+        const halfDays    = records.filter((a) => ['HDF', 'HDS'].includes(norm(a.attendanceType))).length
+        const absentDays  = records.filter((a) => norm(a.attendanceType) === 'A').length
+        const leaveDays   = records.filter((a) => norm(a.attendanceType) === 'L').length
 
         const effectivePresent = presentDays + halfDays * 0.5
 
