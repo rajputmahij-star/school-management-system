@@ -63,12 +63,27 @@ export default function LoginPage() {
     if (!resetEmail.trim()) { toast.error('Enter your registered email address'); return }
     setLoading(true)
     try {
-      // actionCodeSettings helps email clients recognise this as legitimate
+      // Check if user entered their new (pending) email — look up old Firebase Auth email
+      let authEmail = resetEmail.trim()
+      try {
+        const { collection, query, where, getDocs } = await import('firebase/firestore')
+        const { db } = await import('../../firebase/config')
+        const q = query(
+          collection(db, 'pending_email_changes'),
+          where('newEmail', '==', resetEmail.trim().toLowerCase()),
+          where('completed', '==', false)
+        )
+        const snap = await getDocs(q)
+        if (!snap.empty) {
+          authEmail = snap.docs[0].data().oldEmail || authEmail
+        }
+      } catch {}
+
       const actionCodeSettings = {
         url: window.location.origin + '/login',
         handleCodeInApp: false,
       }
-      await sendPasswordResetEmail(auth, resetEmail.trim(), actionCodeSettings)
+      await sendPasswordResetEmail(auth, authEmail, actionCodeSettings)
       setResetSent(true)
       toast.success('Password reset email sent!')
     } catch (err) {

@@ -79,8 +79,8 @@ export const getCurrentUserData = async (uid) => {
   const empDoc = await getDoc(doc(db, 'employees', uid))
   if (empDoc.exists()) {
     const empData = { ...empDoc.data(), role: 'employee', uid }
-    // Apply pending email change if set by admin
     await applyPendingEmailChange(uid, empDoc.ref, empData)
+    await applyPendingPasswordChange(uid, empDoc.ref, empData)
     return empData
   }
 
@@ -98,8 +98,9 @@ export const getCurrentUserData = async (uid) => {
         throw new Error('Student is no longer active in the school.')
       }
     }
-    // Apply pending email change if set by admin
+    // Apply pending email/password changes if set by admin
     await applyPendingEmailChange(uid, snapshot.docs[0].ref, studentData)
+    await applyPendingPasswordChange(uid, snapshot.docs[0].ref, studentData)
     return studentData
   }
 
@@ -134,6 +135,26 @@ const applyPendingEmailChange = async (uid, docRef, userData) => {
     })
   } catch (err) {
     console.warn('Pending email change failed:', err.message)
+  }
+}
+
+/**
+ * If admin set a pendingPassword on the Firestore doc,
+ * update Firebase Auth password using the user's own active session.
+ * Then clear pendingPassword from Firestore.
+ */
+const applyPendingPasswordChange = async (uid, docRef, userData) => {
+  if (!userData.pendingPassword) return
+  const user = auth.currentUser
+  if (!user || user.uid !== uid) return
+  try {
+    await updatePassword(user, userData.pendingPassword)
+    await updateDoc(docRef, {
+      pendingPassword: null,
+      updatedAt: serverTimestamp(),
+    })
+  } catch (err) {
+    console.warn('Pending password change failed:', err.message)
   }
 }
 
