@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle, HiUpload, HiTemplate, HiX } from 'react-icons/hi'
 import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument, invalidateStudentsCache, savePendingEmailChange } from '../../firebase/firestore'
-import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSendPasswordReset } from '../../firebase/adminAuth'
+import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword, adminForceResetPassword, adminUpdateAuthEmail, adminSendPasswordReset } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
 import { exportStudentsToExcel } from '../../utils/excelExport'
@@ -27,7 +27,7 @@ const TRANSPORT_OPTIONS = [
 
 const EMPTY = {
   // credentials
-  email: '', password: '', newPassword: '',
+  email: '', password: '',
   // basic
   studentId: '', photo: '',
   studentName: '', dob: '',
@@ -253,21 +253,35 @@ export default function Students() {
       if (editData) {
         const uid = editData.uid || editData.id
         const newEmail = form.email.trim()
-        const emailChanged = newEmail !== (editData.email || '').trim()
-        // Store pendingEmail so Firebase Auth email updates on next login (free, no Cloud Function)
-        await updateStudentRecord(uid, {
-          ...data,
-          email: newEmail,
-          ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
-          ...(form.newPassword?.trim() ? { pendingPassword: form.newPassword.trim() } : {}),
-        })
+        const oldEmail = (editData.email || '').trim()
+        const emailChanged = newEmail && newEmail !== oldEmail
+
+        // 1. Update Firestore first
+        await updateStudentRecord(uid, { ...data, email: newEmail })
+
+        // 2. If email changed, update Firebase Auth email too
         if (emailChanged) {
-          await savePendingEmailChange(uid, editData.email || '', newEmail)
-          toast.success('Student updated. They can now log in with the new email.')
-        } else if (form.newPassword?.trim()) {
-          toast.success('Student updated. New password will apply on their next login.')
+          // Try using the padded GR number as known current password
+          const grPw = (editData.grNumber || form.grNumber || '').trim().padStart(6, '0')
+          try {
+            const result = await adminUpdateAuthEmail(oldEmail, newEmail, grPw)
+            if (result.method === 'auth') {
+              // Auth email updated successfully — also clear any pending
+              await savePendingEmailChange(uid, oldEmail, newEmail)
+              toast.success('Email updated successfully. Please use your new email address for future logins.')
+            } else if (result.method === 'pending') {
+              // Save as pending — will apply when user next logs in
+              await savePendingEmailChange(uid, oldEmail, newEmail)
+              toast.success('Profile updated. New email will be active on their next login.')
+            } else {
+              toast.success('Student updated successfully')
+            }
+          } catch (err) {
+            toast.error(err.message)
+          }
+        } else {
+          toast.success('Student updated successfully')
         }
-        toast.success('Student updated successfully')
       } else {
         await createStudentAccount(form.email.trim(), form.password, data)
         toast.success(`Account created for ${form.studentName}`)
@@ -336,19 +350,48 @@ export default function Students() {
 
   const handleResetPw = async (e) => {
     e.preventDefault()
+    if (pwForm.newPw !== pwForm.confirm) { toast.error('Passwords do not match'); return }
+    if (pwForm.newPw.length < 6)         { toast.error('Min 6 characters'); return }
     setSaving(true)
     try {
-      const email = pwModal.student.email?.trim()
-      if (!email) { toast.error('No email address on file for this student'); return }
-      await adminSendPasswordReset(email)
-      toast.success(`Password reset email sent to ${email}. Ask the student/parent to check their inbox (and spam folder).`)
+      await adminSetPassword(pwModal.student.email, pwForm.current, pwForm.newPw)
+      toast.success('Password reset successfully')
+      setPwModal({ open: false, student: null })
+      setPwForm({ current: '', newPw: '', confirm: '' })
+    } catch (err) { toast.error(err.message || 'Reset failed') }
+    finally { setSaving(false) }
+  }
+
+  // Reset student password to GR number (default) — padded to 6 chars with leading zeros
+  const handleResetToDefault = async () => {
+    const student = pwModal.student
+    const rawGr = student.grNumber?.trim() || ''
+    const defaultPw = rawGr.padStart(6, '0')
+    if (!rawGr) { toast.error('No GR Number found for this student'); return }
+    if (!window.confirm(`Reset "${student.studentName}" password to "${defaultPw}"?`)) return
+    setSaving(true)
+    try {
+      // Pass defaultPw as the known current password — works if user hasn't changed it yet
+      await adminForceResetPassword(student.email, defaultPw, defaultPw)
+      toast.success(`Password reset to: ${defaultPw}`)
+      setPwModal({ open: false, student: null })
+      setPwForm({ current: '', newPw: '', confirm: '' })
+    } catch (err) {
+      toast.error(err.message || 'Reset failed')
+    } finally { setSaving(false) }
+  }
+
+  // Send Firebase password reset email to student's inbox
+  const handleSendResetEmail = async () => {
+    const student = pwModal.student
+    if (!student.email) { toast.error('No email on file for this student'); return }
+    setSaving(true)
+    try {
+      await adminSendPasswordReset(student.email)
+      toast.success(`Reset link sent to ${student.email} — ask them to check inbox & spam folder.`)
       setPwModal({ open: false, student: null })
     } catch (err) {
-      if (err.code === 'auth/user-not-found') {
-        toast.error('No Firebase account found for this email. The student may need to be re-created.')
-      } else {
-        toast.error(err.message || 'Failed to send reset email')
-      }
+      toast.error(err.message || 'Failed to send reset email')
     } finally { setSaving(false) }
   }
 
@@ -457,7 +500,9 @@ export default function Students() {
         <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input type="text" placeholder="Search name, ID, GR, class, email…"
           value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          className="input-field pl-9" />
+          className="input-field pl-9"
+          autoComplete="off"
+          name="student-search" />
       </div>
 
       {/* Status filter pills */}
@@ -587,11 +632,10 @@ export default function Students() {
             </div>
           )}
           {editData && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-3">
-              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Login Credentials (Admin Edit)</p>
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
+              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Email / Login ID</p>
               <TF label="Email Address" type="email" value={form.email} onChange={h('email')} placeholder="student@school.com" />
-              <TF label="New Password" type="password" value={form.newPassword || ''} onChange={h('newPassword')} placeholder="Leave blank to keep current password" />
-              <p className="text-xs text-gray-400">Changes apply on their next login.</p>
+              <p className="text-xs text-gray-400">The new email will become their login ID on their next login.</p>
             </div>
           )}
 
@@ -996,26 +1040,71 @@ export default function Students() {
       </Modal>
 
       {/* Reset Password Modal */}
-      <Modal isOpen={pwModal.open} onClose={() => !saving && setPwModal({ open: false, student: null })} title="Send Password Reset Email" size="sm">
+      <Modal isOpen={pwModal.open} onClose={() => !saving && setPwModal({ open: false, student: null })} title="Reset Student Password" size="sm">
         {pwModal.student && (
-          <form onSubmit={handleResetPw} className="space-y-4">
+          <div className="space-y-4">
             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <p className="text-sm font-medium text-gray-900 dark:text-white">{pwModal.student.studentName}</p>
               <p className="text-xs text-gray-500">{pwModal.student.email}</p>
+              {pwModal.student.grNumber && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  Default password: <strong>{pwModal.student.grNumber.trim().padStart(6, '0')}</strong>
+                  <span className="text-gray-400 ml-1">(GR No. padded to 6 digits)</span>
+                </p>
+              )}
             </div>
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <p className="text-sm text-blue-700 dark:text-blue-400">
-                This will send a password reset link to <strong>{pwModal.student.email}</strong>.
-                The student can use it to set a new password and log in immediately.
-              </p>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={() => setPwModal({ open: false, student: null })} className="btn-secondary">Cancel</button>
-              <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? <><LoadingSpinner size="sm" /> Sending…</> : <><HiKey className="w-4 h-4" /> Send Reset Email</>}
+
+            {/* Quick reset to default */}
+            {pwModal.student.grNumber && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
+                <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mb-1">Reset to Default Password</p>
+                <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+                  New password will be: <strong className="text-lg">{pwModal.student.grNumber.trim().padStart(6, '0')}</strong>
+                </p>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={handleResetToDefault}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
+                >
+                  {saving ? <LoadingSpinner size="sm" /> : <HiKey className="w-4 h-4" />}
+                  Reset to "{pwModal.student.grNumber.trim().padStart(6, '0')}"
+                </button>
+              </div>
+            )}
+
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+              <p className="text-xs text-gray-500 mb-3">Or send a reset link to their inbox:</p>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleSendResetEmail}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-medium disabled:opacity-50 mb-4"
+              >
+                {saving ? <LoadingSpinner size="sm" /> : '📧'}
+                Send Password Reset Email
               </button>
             </div>
-          </form>
+
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+              <p className="text-xs text-gray-500 mb-3">Or set a custom password:</p>
+              <form onSubmit={handleResetPw} className="space-y-3" autoComplete="off">
+                {[['Current Password', 'current', "Student's current password"], ['New Password', 'newPw', 'Min 6 characters'], ['Confirm New Password', 'confirm', 'Repeat new password']].map(([label, key, ph]) => (
+                  <div key={key}>
+                    <label className="label">{label}</label>
+                    <input type="password" value={pwForm[key]} onChange={(e) => setPwForm((p) => ({ ...p, [key]: e.target.value }))}
+                      className="input-field" placeholder={ph} autoComplete="new-password" />
+                  </div>
+                ))}
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => { setPwModal({ open: false, student: null }); setPwForm({ current: '', newPw: '', confirm: '' }) }} className="btn-secondary">Cancel</button>
+                  <button type="submit" disabled={saving} className="btn-primary">
+                    {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Set Custom Password</>}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
       </Modal>
 

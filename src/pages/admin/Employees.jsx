@@ -5,9 +5,8 @@ import {
   HiUpload, HiTemplate, HiCheckCircle, HiExclamation,
 } from 'react-icons/hi'
 import { getEmployees, getCustomFields, getFormOptions, setDocument, deleteDocument, savePendingEmailChange } from '../../firebase/firestore'
-import {
-  createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
-  deactivateEmployee, activateEmployee, adminSendPasswordReset,
+import { createEmployeeAccount, updateEmployeeRecord, deleteEmployeeRecord,
+  deactivateEmployee, activateEmployee, adminSetPassword, adminForceResetPassword, adminUpdateAuthEmail, adminSendPasswordReset,
 } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, generateEmployeeId, formatCurrency, paginate } from '../../utils/helpers'
@@ -203,20 +202,32 @@ export default function Employees() {
       if (editData) {
         const uid = editData.uid || editData.id
         const newEmail = form.email.trim()
-        const emailChanged = newEmail !== (editData.email || '').trim()
-        await updateEmployeeRecord(uid, {
-          ...data,
-          email: newEmail,
-          ...(emailChanged ? { pendingEmail: newEmail, oldEmail: editData.email || '' } : {}),
-          ...(form.newPassword?.trim() ? { pendingPassword: form.newPassword.trim() } : {}),
-        })
+        const oldEmail = (editData.email || '').trim()
+        const emailChanged = newEmail && newEmail !== oldEmail
+
+        // 1. Update Firestore first
+        await updateEmployeeRecord(uid, { ...data, email: newEmail })
+
+        // 2. If email changed, update Firebase Auth email too
         if (emailChanged) {
-          await savePendingEmailChange(uid, editData.email || '', newEmail)
-          toast.success('Employee updated. They can now log in with the new email.')
-        } else if (form.newPassword?.trim()) {
-          toast.success('Employee updated. New password will apply on their next login.')
+          const empIdPw = (editData.employeeId || form.employeeId || '').trim().padStart(6, '0')
+          try {
+            const result = await adminUpdateAuthEmail(oldEmail, newEmail, empIdPw)
+            if (result.method === 'auth') {
+              await savePendingEmailChange(uid, oldEmail, newEmail)
+              toast.success('Email updated successfully. Please use your new email address for future logins.')
+            } else if (result.method === 'pending') {
+              await savePendingEmailChange(uid, oldEmail, newEmail)
+              toast.success('Profile updated. New email will be active on their next login.')
+            } else {
+              toast.success('Employee updated successfully')
+            }
+          } catch (err) {
+            toast.error(err.message)
+          }
+        } else {
+          toast.success('Employee updated successfully')
         }
-        toast.success('Employee updated successfully')
       } else {
         await createEmployeeAccount(form.email.trim(), form.password, data)
         toast.success(`Account created for ${form.employeeName}`)
@@ -286,21 +297,49 @@ export default function Employees() {
 
   const handleResetPw = async (e) => {
     e.preventDefault()
+    if (pwForm.newPw !== pwForm.confirm) { toast.error('Passwords do not match'); return }
+    if (pwForm.newPw.length < 6)         { toast.error('Min 6 characters'); return }
     setSaving(true)
     try {
-      // Send Firebase password reset email directly to the employee's inbox.
-      // This is the most reliable approach — no old password needed, works immediately.
-      const email = pwModal.emp.email?.trim()
-      if (!email) { toast.error('No email address on file for this employee'); return }
-      await adminSendPasswordReset(email)
-      toast.success(`Password reset email sent to ${email}. Ask the employee to check their inbox (and spam folder).`)
+      await adminSetPassword(pwModal.emp.email, pwForm.current, pwForm.newPw)
+      toast.success('Password reset successfully')
+      setPwModal({ open: false, emp: null })
+      setPwForm({ current: '', newPw: '', confirm: '' })
+    } catch (err) {
+      toast.error(err.message || 'Reset failed')
+    } finally { setSaving(false) }
+  }
+
+  // Reset employee password to their Employee ID (default)
+  const handleResetToDefault = async () => {
+    const emp = pwModal.emp
+    const rawId = emp.employeeId?.trim() || ''
+    const defaultPw = rawId.padStart(6, '0')
+    if (!rawId) { toast.error('No Employee ID found for this employee'); return }
+    if (!window.confirm(`Reset "${emp.employeeName}" password to "${defaultPw}"?`)) return
+    setSaving(true)
+    try {
+      // Pass defaultPw as the known current password — works if user hasn't changed it yet
+      await adminForceResetPassword(emp.email, defaultPw, defaultPw)
+      toast.success(`Password reset to: ${defaultPw}`)
+      setPwModal({ open: false, emp: null })
+      setPwForm({ current: '', newPw: '', confirm: '' })
+    } catch (err) {
+      toast.error(err.message || 'Reset failed')
+    } finally { setSaving(false) }
+  }
+
+  // Send Firebase password reset email to employee's inbox
+  const handleSendResetEmail = async () => {
+    const emp = pwModal.emp
+    if (!emp.email) { toast.error('No email on file for this employee'); return }
+    setSaving(true)
+    try {
+      await adminSendPasswordReset(emp.email)
+      toast.success(`Reset link sent to ${emp.email} — ask them to check inbox & spam folder.`)
       setPwModal({ open: false, emp: null })
     } catch (err) {
-      if (err.code === 'auth/user-not-found') {
-        toast.error('No Firebase account found for this email. The employee may need to be re-created.')
-      } else {
-        toast.error(err.message || 'Failed to send reset email')
-      }
+      toast.error(err.message || 'Failed to send reset email')
     } finally { setSaving(false) }
   }
 
@@ -406,7 +445,9 @@ export default function Employees() {
         <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input type="text" placeholder="Search name, ID, designation, email…"
           value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          className="input-field pl-9" />
+          className="input-field pl-9"
+          autoComplete="off"
+          name="employee-search" />
       </div>
 
       {/* Filter pills — Active and Left only */}
@@ -536,11 +577,10 @@ export default function Employees() {
             </div>
           )}
           {editData && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-3">
-              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Login Credentials (Admin Edit)</p>
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
+              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Email / Login ID</p>
               <TextField label="Email Address" type="email" value={form.email} onChange={handleEmail} placeholder="employee@school.com" />
-              <TextField label="New Password" type="password" value={form.newPassword || ''} onChange={(e) => setForm((p) => ({ ...p, newPassword: e.target.value }))} placeholder="Leave blank to keep current password" />
-              <p className="text-xs text-gray-400">Changes apply on their next login.</p>
+              <p className="text-xs text-gray-400">The new email will become their login ID on their next login.</p>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -648,26 +688,84 @@ export default function Employees() {
 
       {/* ── Reset Password Modal ── */}
       <Modal isOpen={pwModal.open} onClose={() => !saving && setPwModal({ open: false, emp: null })}
-        title="Send Password Reset Email" size="sm">
+        title="Reset Employee Password" size="sm">
         {pwModal.emp && (
-          <form onSubmit={handleResetPw} className="space-y-4">
+          <div className="space-y-4">
             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <p className="text-sm font-medium text-gray-900 dark:text-white">{pwModal.emp.employeeName}</p>
               <p className="text-xs text-gray-500">{pwModal.emp.email}</p>
+              {pwModal.emp.employeeId && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  Default password (Employee ID): <strong>{pwModal.emp.employeeId}</strong>
+                </p>
+              )}
             </div>
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <p className="text-sm text-blue-700 dark:text-blue-400">
-                This will send a password reset link to <strong>{pwModal.emp.email}</strong>.
-                The employee can use it to set a new password and log in immediately.
-              </p>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={() => setPwModal({ open: false, emp: null })} className="btn-secondary">Cancel</button>
-              <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? <><LoadingSpinner size="sm" /> Sending…</> : <><HiKey className="w-4 h-4" /> Send Reset Email</>}
+
+            {/* Quick reset to Employee ID */}
+            {pwModal.emp.employeeId && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-700">
+                <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mb-1">Reset to Default Password</p>
+                <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+                  New password will be: <strong className="text-lg">{pwModal.emp.employeeId.trim().padStart(6, '0')}</strong>
+                </p>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={handleResetToDefault}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
+                >
+                  {saving ? <LoadingSpinner size="sm" /> : <HiKey className="w-4 h-4" />}
+                  Reset to Employee ID ({pwModal.emp.employeeId.trim().padStart(6, '0')})
+                </button>
+              </div>
+            )}
+
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+              <p className="text-xs text-gray-500 mb-3">Or send a reset link to their inbox:</p>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleSendResetEmail}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-medium disabled:opacity-50 mb-4"
+              >
+                {saving ? <LoadingSpinner size="sm" /> : '📧'}
+                Send Password Reset Email
               </button>
             </div>
-          </form>
+
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+              <p className="text-xs text-gray-500 mb-3">Or set a custom password:</p>
+              <form onSubmit={handleResetPw} className="space-y-3" autoComplete="off">
+                <div>
+                  <label className="label">Current Password</label>
+                  <input type="password" value={pwForm.current}
+                    onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
+                    className="input-field" placeholder="Employee's current password"
+                    autoComplete="new-password" />
+                </div>
+                <div>
+                  <label className="label">New Password</label>
+                  <input type="password" value={pwForm.newPw}
+                    onChange={(e) => setPwForm((p) => ({ ...p, newPw: e.target.value }))}
+                    className="input-field" minLength={6} placeholder="Min 6 characters"
+                    autoComplete="new-password" />
+                </div>
+                <div>
+                  <label className="label">Confirm New Password</label>
+                  <input type="password" value={pwForm.confirm}
+                    onChange={(e) => setPwForm((p) => ({ ...p, confirm: e.target.value }))}
+                    className="input-field" placeholder="Repeat new password"
+                    autoComplete="new-password" />
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => { setPwModal({ open: false, emp: null }); setPwForm({ current: '', newPw: '', confirm: '' }) }} className="btn-secondary">Cancel</button>
+                  <button type="submit" disabled={saving} className="btn-primary">
+                    {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Set Custom Password</>}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
       </Modal>
 
