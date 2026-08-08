@@ -201,10 +201,23 @@ export default function LoginPage() {
                       <span className="text-2xl">✉️</span>
                     </div>
                     <p className="text-sm font-medium text-green-800 dark:text-green-300">Reset email sent!</p>
-                    <p className="text-xs text-green-700 dark:text-green-400">
-                      Check your inbox at <strong>{resetEmail}</strong> and click the reset link.
-                      If you don't see it, check your <strong>Spam / Junk</strong> folder.
-                    </p>
+                    <div className="text-left space-y-2 text-xs text-green-700 dark:text-green-400">
+                      <p>A reset link was sent to <strong>{resetEmail}</strong>.</p>
+                      <p className="font-semibold text-amber-700 dark:text-amber-400">
+                        ⚠️ Important — check your Spam / Junk folder!
+                      </p>
+                      <p>
+                        The email comes from <strong>noreply@anand-school-bca42.firebaseapp.com</strong>.
+                        Many email providers mark it as spam automatically.
+                      </p>
+                      <p>
+                        If you find it in spam, mark it as <strong>"Not Spam"</strong> and click the link.
+                        The link expires in <strong>1 hour</strong>.
+                      </p>
+                      <p className="text-gray-500">
+                        Still can't find it? Contact your admin to reset your password directly.
+                      </p>
+                    </div>
                     <button onClick={() => { setView('login'); setResetSent(false) }}
                       className="text-xs text-primary-600 hover:underline font-medium">
                       Return to Login
