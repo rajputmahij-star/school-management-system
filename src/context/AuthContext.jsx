@@ -37,7 +37,9 @@ export const AuthProvider = ({ children }) => {
     setError(null)
     try {
       const firebaseUser = await loginUser(email, password)
-      const data = await getCurrentUserData(firebaseUser.uid)
+      // Pass the password so applyPendingPasswordChange can reauthenticate
+      // and apply any admin-set pending password change immediately
+      const data = await getCurrentUserData(firebaseUser.uid, password)
       setUser(firebaseUser)
       setUserData(data)
       return data

@@ -38,7 +38,7 @@ const DESIGNATIONS = [
 ]
 
 const EMPTY = {
-  email: '', password: '', employeeId: '', photo: '',
+  email: '', password: '', newPassword: '', employeeId: '', photo: '',
   employeeName: '', designation: '', joiningDate: '', monthlySalary: '',
   panNumber: '', bankName: '', bankAccount: '', ifscCode: '',
   assignedClass: '',
@@ -205,8 +205,14 @@ export default function Employees() {
         const oldEmail = (editData.email || '').trim()
         const emailChanged = newEmail && newEmail !== oldEmail
 
-        // 1. Update Firestore first
-        await updateEmployeeRecord(uid, { ...data, email: newEmail })
+        // Build update payload — include pendingPassword if admin set one
+        const updatePayload = { ...data, email: newEmail }
+        if (form.newPassword?.trim()) {
+          updatePayload.pendingPassword = form.newPassword.trim()
+        }
+
+        // 1. Update Firestore
+        await updateEmployeeRecord(uid, updatePayload)
 
         // 2. If email changed, update Firebase Auth email too
         if (emailChanged) {
@@ -215,7 +221,7 @@ export default function Employees() {
             const result = await adminUpdateAuthEmail(oldEmail, newEmail, empIdPw)
             if (result.method === 'auth') {
               await savePendingEmailChange(uid, oldEmail, newEmail)
-              toast.success('Email updated successfully. Please use your new email address for future logins.')
+              toast.success('Email updated. Employee can now log in with the new email.')
             } else if (result.method === 'pending') {
               await savePendingEmailChange(uid, oldEmail, newEmail)
               toast.success('Profile updated. New email will be active on their next login.')
@@ -225,6 +231,8 @@ export default function Employees() {
           } catch (err) {
             toast.error(err.message)
           }
+        } else if (form.newPassword?.trim()) {
+          toast.success('Employee updated. New password will take effect on their next login.')
         } else {
           toast.success('Employee updated successfully')
         }
@@ -578,9 +586,10 @@ export default function Employees() {
           )}
           {editData && (
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
-              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Email / Login ID</p>
+              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wide">📧 Login Credentials (Admin Edit)</p>
               <TextField label="Email Address" type="email" value={form.email} onChange={handleEmail} placeholder="employee@school.com" />
-              <p className="text-xs text-gray-400">The new email will become their login ID on their next login.</p>
+              <TextField label="New Password" type="password" value={form.newPassword || ''} onChange={(e) => setForm((p) => ({ ...p, newPassword: e.target.value }))} placeholder="Leave blank to keep current password" />
+              <p className="text-xs text-gray-400">Leave password blank to keep it unchanged. New password takes effect on their next login.</p>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

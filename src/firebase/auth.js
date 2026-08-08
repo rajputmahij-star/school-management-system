@@ -83,7 +83,7 @@ export const logoutUser = async () => {
   await signOut(auth)
 }
 
-export const getCurrentUserData = async (uid) => {
+export const getCurrentUserData = async (uid, currentPassword = null) => {
   // Check admins collection
   const adminDoc = await getDoc(doc(db, 'admins', uid))
   if (adminDoc.exists()) {
@@ -95,7 +95,7 @@ export const getCurrentUserData = async (uid) => {
   if (empDoc.exists()) {
     const empData = { ...empDoc.data(), role: 'employee', uid }
     await applyPendingEmailChange(uid, empDoc.ref, empData)
-    await applyPendingPasswordChange(uid, empDoc.ref, empData)
+    await applyPendingPasswordChange(uid, empDoc.ref, empData, currentPassword)
     return empData
   }
 
@@ -113,9 +113,8 @@ export const getCurrentUserData = async (uid) => {
         throw new Error('Student is no longer active in the school.')
       }
     }
-    // Apply pending email/password changes if set by admin
     await applyPendingEmailChange(uid, snapshot.docs[0].ref, studentData)
-    await applyPendingPasswordChange(uid, snapshot.docs[0].ref, studentData)
+    await applyPendingPasswordChange(uid, snapshot.docs[0].ref, studentData, currentPassword)
     return studentData
   }
 
@@ -168,15 +167,21 @@ const applyPendingEmailChange = async (uid, docRef, userData) => {
  * update Firebase Auth password using the user's own active session.
  * Then clear pendingPassword from Firestore.
  *
- * Note: updatePassword() requires the session to be recent. If it fails with
- * auth/requires-recent-login, we skip silently — the admin should use the
- * "Send Reset Email" button instead for locked-out users.
+ * This is called right after a fresh signInWithEmailAndPassword, so the
+ * session is always recent enough for updatePassword to succeed.
+ * We also reauthenticate first to guarantee it works.
  */
-const applyPendingPasswordChange = async (uid, docRef, userData) => {
+const applyPendingPasswordChange = async (uid, docRef, userData, currentPassword) => {
   if (!userData.pendingPassword) return
   const user = auth.currentUser
   if (!user || user.uid !== uid) return
   try {
+    // If we have the current password (passed from loginUser), reauthenticate
+    // first to ensure the session is fresh enough for updatePassword
+    if (currentPassword) {
+      const credential = EmailAuthProvider.credential(user.email, currentPassword)
+      await reauthenticateWithCredential(user, credential)
+    }
     await updatePassword(user, userData.pendingPassword)
     await updateDoc(docRef, {
       pendingPassword: null,
