@@ -31,32 +31,47 @@ const findAuthEmailByPendingEmail = async (pendingEmail) => {
 }
 
 export const loginUser = async (email, password) => {
+  const trimmedEmail = email.trim().toLowerCase()
+
   try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password)
+    // Step 1: Try direct login with whatever email the user typed
+    const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, password)
     return userCredential.user
   } catch (err) {
-    // If login fails, check if user entered their new (pending) email
-    if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
-      const oldEmail = await findAuthEmailByPendingEmail(email.trim())
+    // Step 2: If login fails, check if the user typed their NEW (pending) email
+    // but Firebase Auth still has their OLD email
+    if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+      const oldEmail = await findAuthEmailByPendingEmail(trimmedEmail)
       if (oldEmail) {
-        // Log in with the old Firebase Auth email
-        const userCredential = await signInWithEmailAndPassword(auth, oldEmail, password)
-        const user = userCredential.user
-        // Immediately update Firebase Auth email to the new one so old email stops working
+        // Log in with the old Firebase Auth email + same password
+        let userCredential
         try {
-          await updateEmail(user, email.trim().toLowerCase())
-          // Mark the pending change as completed
+          userCredential = await signInWithEmailAndPassword(auth, oldEmail, password)
+        } catch (innerErr) {
+          // Old email login also failed — wrong password or account issue
+          // Re-throw the original error so the UI shows the right message
+          throw err
+        }
+
+        const user = userCredential.user
+
+        // Session is fresh (just logged in) — now safely update Auth email to the new one
+        try {
+          await updateEmail(user, trimmedEmail)
+          // Mark the pending change as completed in Firestore
           const q2 = query(
             collection(db, 'pending_email_changes'),
-            where('newEmail', '==', email.trim().toLowerCase())
+            where('newEmail', '==', trimmedEmail)
           )
           const snap2 = await getDocs(q2)
           snap2.forEach(async (d) => {
             try { await updateDoc(d.ref, { completed: true }) } catch {}
           })
         } catch (updateErr) {
-          console.warn('Auth email update failed:', updateErr.message)
+          // updateEmail failed — non-fatal, user can still proceed
+          console.warn('Auth email migration failed:', updateErr.code, updateErr.message)
         }
+
         return user
       }
     }
@@ -111,6 +126,9 @@ export const getCurrentUserData = async (uid) => {
  * If admin set a pendingEmail on the Firestore doc,
  * update Firebase Auth email using the user's own active session (free, no Cloud Functions).
  * Then clear pendingEmail from Firestore.
+ *
+ * Note: updateEmail() requires a recent session. If it fails, we leave the
+ * pendingEmail so the login flow can retry via pending_email_changes lookup.
  */
 const applyPendingEmailChange = async (uid, docRef, userData) => {
   if (!userData.pendingEmail) return
@@ -133,8 +151,15 @@ const applyPendingEmailChange = async (uid, docRef, userData) => {
     snap.forEach(async (d) => {
       try { await updateDoc(d.ref, { completed: true }) } catch {}
     })
+    console.log('Pending email change applied for', uid)
   } catch (err) {
-    console.warn('Pending email change failed:', err.message)
+    if (err.code === 'auth/requires-recent-login') {
+      // Session too old — the login flow already handles this via pending_email_changes
+      // so the user can still log in with the new email next time
+      console.warn('Pending email change deferred (requires recent login):', uid)
+    } else {
+      console.warn('Pending email change failed:', err.code, err.message)
+    }
   }
 }
 
@@ -142,6 +167,10 @@ const applyPendingEmailChange = async (uid, docRef, userData) => {
  * If admin set a pendingPassword on the Firestore doc,
  * update Firebase Auth password using the user's own active session.
  * Then clear pendingPassword from Firestore.
+ *
+ * Note: updatePassword() requires the session to be recent. If it fails with
+ * auth/requires-recent-login, we skip silently — the admin should use the
+ * "Send Reset Email" button instead for locked-out users.
  */
 const applyPendingPasswordChange = async (uid, docRef, userData) => {
   if (!userData.pendingPassword) return
@@ -153,8 +182,13 @@ const applyPendingPasswordChange = async (uid, docRef, userData) => {
       pendingPassword: null,
       updatedAt: serverTimestamp(),
     })
+    console.log('Pending password change applied for', uid)
   } catch (err) {
-    console.warn('Pending password change failed:', err.message)
+    if (err.code === 'auth/requires-recent-login') {
+      console.warn('Pending password deferred (requires recent login):', uid)
+    } else {
+      console.warn('Pending password change failed:', err.code, err.message)
+    }
   }
 }
 

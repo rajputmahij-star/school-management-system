@@ -38,11 +38,9 @@ export default function StudentAttendanceView() {
       leaves.forEach((leave) => {
         const dates = leave.dates || []
         dates.forEach((dateStr) => {
-          // Only apply if in current month view
           try {
             const d = parseISO(dateStr)
             if (d.getMonth() + 1 === month && d.getFullYear() === year) {
-              // Only overlay if no record exists or the existing record is already Leave
               if (!map[dateStr] || map[dateStr].attendanceType === 'Leave') {
                 map[dateStr] = {
                   dateStr,
@@ -61,11 +59,34 @@ export default function StudentAttendanceView() {
     } finally { setLoading(false) }
   }
 
+  // Earliest month the student can navigate to (their admission month)
+  const admissionDate = userData?.admissionDate?.toDate
+    ? userData.admissionDate.toDate()
+    : userData?.admissionDate ? new Date(userData.admissionDate) : null
+
+  const minMonth = admissionDate
+    ? new Date(admissionDate.getFullYear(), admissionDate.getMonth(), 1)
+    : null
+
+  const handlePrevMonth = () => {
+    const prev = subMonths(calendarMonth, 1)
+    if (minMonth && prev < minMonth) return   // blocked — before admission date
+    setCalendarMonth(prev)
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Attendance</h1>
         <p className="text-sm text-gray-500 mt-0.5">View your monthly attendance calendar</p>
+        {admissionDate && (
+          <p className="text-xs text-gray-400 mt-1">
+            Attendance records available from{' '}
+            <span className="font-medium text-gray-500">
+              {format(admissionDate, 'MMMM yyyy')}
+            </span>
+          </p>
+        )}
       </div>
 
       {loading
@@ -73,7 +94,7 @@ export default function StudentAttendanceView() {
         : <AttendanceCalendar
             records={records}
             month={calendarMonth}
-            onPrevMonth={() => setCalendarMonth((m) => subMonths(m, 1))}
+            onPrevMonth={handlePrevMonth}
             onNextMonth={() => setCalendarMonth((m) => addMonths(m, 1))}
             studentMode={true}
           />

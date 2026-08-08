@@ -6,8 +6,7 @@ import { initializeApp, getApps } from 'firebase/app'
 import {
   getAuth,
   createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  updatePassword,
+  sendPasswordResetEmail,
   signOut,
 } from 'firebase/auth'
 import { doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
@@ -89,14 +88,13 @@ export const createEmployeeAccount = async (email, password, employeeData) => {
   return uid
 }
 
-// ─── Admin set password ────────────────────────────────────────────────────────
-export const adminSetPassword = async (email, currentPassword, newPassword) => {
-  const cred = await signInWithEmailAndPassword(secondaryAuth, email, currentPassword)
-  try {
-    await updatePassword(cred.user, newPassword)
-  } finally {
-    try { await signOut(secondaryAuth) } catch (_) {}
-  }
+/**
+ * Send a Firebase password reset email to a user.
+ * Uses the secondary auth so the admin's own session is not affected.
+ * The reset link goes directly to the user's inbox — no old password needed.
+ */
+export const adminSendPasswordReset = async (email) => {
+  await sendPasswordResetEmail(secondaryAuth, email.trim().toLowerCase())
 }
 
 // ─── Update records ────────────────────────────────────────────────────────────

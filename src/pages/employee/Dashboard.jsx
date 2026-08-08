@@ -59,12 +59,6 @@ export default function EmployeeDashboard() {
     ]).then((docs) => setSalaryDoc(docs[0] || null)).catch(() => {})
   }, [salaryMonth, salaryYear, userData])
 
-  useEffect(() => {
-    const empId = userData?.uid || userData?.id
-    if (empId) loadAll(empId)
-    else setLoading(false)
-  }, [userData, calendarMonth])
-
   const loadAll = async (empId) => {
     try {
       setLoading(true)
@@ -175,7 +169,18 @@ export default function EmployeeDashboard() {
           : <AttendanceCalendar
               records={attendance}
               month={calendarMonth}
-              onPrevMonth={() => setCalendarMonth((m) => subMonths(m, 1))}
+              onPrevMonth={() => {
+                // Block navigation before the employee's joining month
+                const joinDate = userData?.joiningDate?.toDate
+                  ? userData.joiningDate.toDate()
+                  : userData?.joiningDate ? new Date(userData.joiningDate) : null
+                const minMonth = joinDate
+                  ? new Date(joinDate.getFullYear(), joinDate.getMonth(), 1)
+                  : null
+                const prev = subMonths(calendarMonth, 1)
+                if (minMonth && prev < minMonth) return
+                setCalendarMonth(prev)
+              }}
               onNextMonth={() => setCalendarMonth((m) => addMonths(m, 1))}
             />
         }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { HiPlus, HiSearch, HiPencil, HiTrash, HiEye, HiDownload, HiKey, HiUserRemove, HiUserAdd, HiExclamation, HiCheckCircle, HiUpload, HiTemplate, HiX } from 'react-icons/hi'
 import { getStudents, getFeeRules, getCustomFields, getFormOptions, setDocument, deleteDocument, invalidateStudentsCache, savePendingEmailChange } from '../../firebase/firestore'
-import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSetPassword } from '../../firebase/adminAuth'
+import { createStudentAccount, updateStudentRecord, deleteStudentRecord, adminSendPasswordReset } from '../../firebase/adminAuth'
 import { uploadPhoto } from '../../firebase/storage'
 import { formatDate, calculateAge, getStudentStatus, generateStudentId, paginate, formatCurrency, calculateStudentFee, getAcademicYear } from '../../utils/helpers'
 import { exportStudentsToExcel } from '../../utils/excelExport'
@@ -336,16 +336,20 @@ export default function Students() {
 
   const handleResetPw = async (e) => {
     e.preventDefault()
-    if (pwForm.newPw !== pwForm.confirm) { toast.error('Passwords do not match'); return }
-    if (pwForm.newPw.length < 6)         { toast.error('Min 6 characters'); return }
     setSaving(true)
     try {
-      await adminSetPassword(pwModal.student.email, pwForm.current, pwForm.newPw)
-      toast.success('Password reset successfully')
+      const email = pwModal.student.email?.trim()
+      if (!email) { toast.error('No email address on file for this student'); return }
+      await adminSendPasswordReset(email)
+      toast.success(`Password reset email sent to ${email}. Ask the student/parent to check their inbox (and spam folder).`)
       setPwModal({ open: false, student: null })
-      setPwForm({ current: '', newPw: '', confirm: '' })
-    } catch (err) { toast.error(err.message || 'Reset failed') }
-    finally { setSaving(false) }
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') {
+        toast.error('No Firebase account found for this email. The student may need to be re-created.')
+      } else {
+        toast.error(err.message || 'Failed to send reset email')
+      }
+    } finally { setSaving(false) }
   }
 
   // ─── Import handling ──────────────────────────────────────────────────────
@@ -992,24 +996,23 @@ export default function Students() {
       </Modal>
 
       {/* Reset Password Modal */}
-      <Modal isOpen={pwModal.open} onClose={() => !saving && setPwModal({ open: false, student: null })} title="Reset Student Password" size="sm">
+      <Modal isOpen={pwModal.open} onClose={() => !saving && setPwModal({ open: false, student: null })} title="Send Password Reset Email" size="sm">
         {pwModal.student && (
           <form onSubmit={handleResetPw} className="space-y-4">
             <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
               <p className="text-sm font-medium text-gray-900 dark:text-white">{pwModal.student.studentName}</p>
               <p className="text-xs text-gray-500">{pwModal.student.email}</p>
             </div>
-            {[['Current Password', 'current', "Student's current password"], ['New Password', 'newPw', 'Min 6 characters'], ['Confirm New Password', 'confirm', 'Repeat new password']].map(([label, key, ph]) => (
-              <div key={key}>
-                <label className="label">{label}</label>
-                <input type="password" value={pwForm[key]} onChange={(e) => setPwForm((p) => ({ ...p, [key]: e.target.value }))}
-                  className="input-field" required placeholder={ph} />
-              </div>
-            ))}
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <p className="text-sm text-blue-700 dark:text-blue-400">
+                This will send a password reset link to <strong>{pwModal.student.email}</strong>.
+                The student can use it to set a new password and log in immediately.
+              </p>
+            </div>
             <div className="flex justify-end gap-3">
               <button type="button" onClick={() => setPwModal({ open: false, student: null })} className="btn-secondary">Cancel</button>
               <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? <><LoadingSpinner size="sm" /> Resetting…</> : <><HiKey className="w-4 h-4" /> Reset Password</>}
+                {saving ? <><LoadingSpinner size="sm" /> Sending…</> : <><HiKey className="w-4 h-4" /> Send Reset Email</>}
               </button>
             </div>
           </form>

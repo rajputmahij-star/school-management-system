@@ -77,7 +77,16 @@ export default function StudentAttendancePage() {
     try {
       setLoading(true)
       const allStudents   = await getStudents()
-      const classStudents = allStudents.filter((s) => s.className === selectedClass && !s.leaveDate)
+      const selectedDateObj = new Date(selectedDate + 'T00:00:00')
+      const classStudents = allStudents.filter((s) => {
+        if (s.className !== selectedClass || s.leaveDate) return false
+        // Don't show students whose admission date is after the selected date
+        if (s.admissionDate) {
+          const admitted = s.admissionDate?.toDate ? s.admissionDate.toDate() : new Date(s.admissionDate)
+          if (admitted > selectedDateObj) return false
+        }
+        return true
+      })
       const existing      = await getStudentAttendanceByClass(selectedClass, selectedDate)
       const map = {}
       classStudents.forEach((s) => {
@@ -96,7 +105,16 @@ export default function StudentAttendancePage() {
     setLoadingSummary(true)
     try {
       const allStudents   = await getStudents()
-      const classStudents = allStudents.filter((s) => s.className === summaryClass && !s.leaveDate)
+      // Only include students admitted on or before the end of the selected month
+      const monthEnd = new Date(summaryYear, summaryMonth, 0, 23, 59, 59)
+      const classStudents = allStudents.filter((s) => {
+        if (s.className !== summaryClass || s.leaveDate) return false
+        if (s.admissionDate) {
+          const admitted = s.admissionDate?.toDate ? s.admissionDate.toDate() : new Date(s.admissionDate)
+          if (admitted > monthEnd) return false
+        }
+        return true
+      })
       const summaries = await Promise.all(classStudents.map(async (s) => {
         const sid     = s.uid || s.id
         const records = await getStudentAttendance(sid, summaryMonth, summaryYear)
@@ -123,9 +141,18 @@ export default function StudentAttendancePage() {
     try {
       const month = calMonth.getMonth() + 1
       const year  = calMonth.getFullYear()
+      // Only include students admitted on or before the end of the calendar month
+      const monthEnd = new Date(year, month, 0, 23, 59, 59)
 
       const allStudents   = await getStudents()
-      const classStudents = allStudents.filter((s) => s.className === calClass && !s.leaveDate)
+      const classStudents = allStudents.filter((s) => {
+        if (s.className !== calClass || s.leaveDate) return false
+        if (s.admissionDate) {
+          const admitted = s.admissionDate?.toDate ? s.admissionDate.toDate() : new Date(s.admissionDate)
+          if (admitted > monthEnd) return false
+        }
+        return true
+      })
       setCalStudents(classStudents)
 
       const entries = await Promise.all(classStudents.map(async (s) => {

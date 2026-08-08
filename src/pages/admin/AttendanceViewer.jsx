@@ -11,13 +11,27 @@ import { addMonths, subMonths } from 'date-fns'
 import { SCHOOL_CLASSES } from '../../utils/helpers'
 
 // ── Compact attendance modal ──────────────────────────────────────────────────
-function AttendanceModal({ name, records, loading, onClose }) {
+// minDate: the joining / admission date — prevents navigating before it
+function AttendanceModal({ name, records, loading, onClose, minDate }) {
   const [month, setMonth] = useState(new Date())
 
   const monthRecords = records.filter((r) => {
     const d = r.date?.toDate ? r.date.toDate() : new Date(r.dateStr + 'T00:00:00')
     return d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear()
   })
+
+  // Earliest month we can navigate to (start of the joining/admission month)
+  const minMonth = minDate
+    ? new Date(minDate.getFullYear(), minDate.getMonth(), 1)
+    : null
+
+  const handlePrev = () => {
+    const prev = subMonths(month, 1)
+    if (minMonth && prev < minMonth) return   // blocked — before joining date
+    setMonth(prev)
+  }
+
+  const handleNext = () => setMonth((m) => addMonths(m, 1))
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -34,8 +48,8 @@ function AttendanceModal({ name, records, loading, onClose }) {
             : <AttendanceCalendar
                 records={monthRecords}
                 month={month}
-                onPrevMonth={() => setMonth((m) => subMonths(m, 1))}
-                onNextMonth={() => setMonth((m) => addMonths(m, 1))}
+                onPrevMonth={handlePrev}
+                onNextMonth={handleNext}
               />
           }
         </div>
@@ -53,7 +67,7 @@ export default function AdminAttendanceViewer() {
   const [selectedClass, setSelectedClass] = useState('')
 
   // Modal state
-  const [modal,        setModal]        = useState(null) // { name, records }
+  const [modal,        setModal]        = useState(null) // { name, records, minDate }
   const [modalLoading, setModalLoading] = useState(false)
 
   useEffect(() => { loadPeople() }, [])
@@ -70,35 +84,45 @@ export default function AdminAttendanceViewer() {
   }
 
   const openEmployeeAttendance = async (emp) => {
-    setModal({ name: emp.employeeName, records: [] })
+    const joinDate = emp.joiningDate?.toDate
+      ? emp.joiningDate.toDate()
+      : emp.joiningDate ? new Date(emp.joiningDate) : null
+    setModal({ name: emp.employeeName, records: [], minDate: joinDate })
     setModalLoading(true)
     try {
-      // Load all months (last 12)
+      // Load months starting from joining date (or last 12, whichever is fewer)
       const now = new Date()
       const allRecords = []
       for (let i = 0; i < 12; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        // Skip months before the employee joined
+        if (joinDate && d < new Date(joinDate.getFullYear(), joinDate.getMonth(), 1)) break
         const recs = await getEmployeeAttendance(emp.uid || emp.id, d.getMonth() + 1, d.getFullYear())
         allRecords.push(...recs)
       }
-      setModal({ name: emp.employeeName, records: allRecords })
+      setModal({ name: emp.employeeName, records: allRecords, minDate: joinDate })
     } catch (err) {
       toast.error('Failed to load attendance')
     } finally { setModalLoading(false) }
   }
 
   const openStudentAttendance = async (student) => {
-    setModal({ name: student.studentName, records: [] })
+    const admitDate = student.admissionDate?.toDate
+      ? student.admissionDate.toDate()
+      : student.admissionDate ? new Date(student.admissionDate) : null
+    setModal({ name: student.studentName, records: [], minDate: admitDate })
     setModalLoading(true)
     try {
       const now = new Date()
       const allRecords = []
       for (let i = 0; i < 12; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        // Skip months before the student was admitted
+        if (admitDate && d < new Date(admitDate.getFullYear(), admitDate.getMonth(), 1)) break
         const recs = await getStudentAttendance(student.uid || student.id, d.getMonth() + 1, d.getFullYear())
         allRecords.push(...recs)
       }
-      setModal({ name: student.studentName, records: allRecords })
+      setModal({ name: student.studentName, records: allRecords, minDate: admitDate })
     } catch (err) {
       toast.error('Failed to load attendance')
     } finally { setModalLoading(false) }
@@ -236,6 +260,7 @@ export default function AdminAttendanceViewer() {
           records={modal.records}
           loading={modalLoading}
           onClose={() => setModal(null)}
+          minDate={modal.minDate}
         />
       )}
     </div>
